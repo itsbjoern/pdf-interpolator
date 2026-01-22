@@ -1,0 +1,49 @@
+{
+  "app": {
+    "title": "PDF Spreadsheet Rewriter",
+    "description": "Replace text in PDF documents using spreadsheet data"
+  },
+  "steps": {
+    "selectSpreadsheet": "1. Select Spreadsheet & Set Up Mappings",
+    "selectPDF": "2. Select PDF",
+    "process": "3. Process"
+  },
+  "spreadsheet": {
+    "selectButton": "Select Spreadsheet",
+    "selectedFile": "Selected file: {{fileName}}",
+    "selectSheet": "Select Sheet",
+    "selectSheets": "Select Sheets ({{selected}} of {{total}} selected)",
+    "noSheets": "No sheets found"
+  },
+  "mapping": {
+    "title": "Column Mappings",
+    "addMapping": "Add Mapping",
+    "removeMapping": "Remove",
+    "sourceColumn": "Source Column (find)",
+    "targetColumn": "Target Column (replace with)",
+    "selectColumn": "Select a column"
+  },
+  "pdf": {
+    "selectButton": "Select PDF",
+    "selectedFile": "Selected PDF: {{fileName}}",
+    "pageCount": "Pages: {{count}}"
+  },
+  "process": {
+    "selectOutput": "Select Output Location",
+    "outputPath": "Output: {{path}}",
+    "startButton": "Process PDF",
+    "processing": "Processing...",
+    "progress": "Progress: {{percent}}%",
+    "success": "PDF processed successfully!",
+    "error": "Error: {{message}}",
+    "stats": "Replacements made: {{count}}"
+  },
+  "errors": {
+    "noMappings": "Please add at least one mapping",
+    "noPDF": "Please select a PDF file",
+    "noOutput": "Please select an output location",
+    "invalidSpreadsheet": "Failed to read spreadsheet",
+    "invalidPDF": "Failed to read PDF",
+    "processingFailed": "Failed to process PDF"
+  }
+}

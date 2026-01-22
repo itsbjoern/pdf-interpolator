@@ -1,0 +1,49 @@
+{
+  "app": {
+    "title": "PDF-Tabellen-Umschreiber",
+    "description": "Ersetzen Sie Text in PDF-Dokumenten mithilfe von Tabellendaten"
+  },
+  "steps": {
+    "selectSpreadsheet": "1. Tabelle auswählen & Zuordnungen einrichten",
+    "selectPDF": "2. PDF auswählen",
+    "process": "3. Verarbeiten"
+  },
+  "spreadsheet": {
+    "selectButton": "Tabelle auswählen",
+    "selectedFile": "Ausgewählte Datei: {{fileName}}",
+    "selectSheet": "Blatt auswählen",
+    "selectSheets": "Blätter auswählen ({{selected}} von {{total}} ausgewählt)",
+    "noSheets": "Keine Blätter gefunden"
+  },
+  "mapping": {
+    "title": "Spaltenzuordnungen",
+    "addMapping": "Zuordnung hinzufügen",
+    "removeMapping": "Entfernen",
+    "sourceColumn": "Quellspalte (suchen)",
+    "targetColumn": "Zielspalte (ersetzen durch)",
+    "selectColumn": "Wählen Sie eine Spalte"
+  },
+  "pdf": {
+    "selectButton": "PDF auswählen",
+    "selectedFile": "Ausgewähltes PDF: {{fileName}}",
+    "pageCount": "Seiten: {{count}}"
+  },
+  "process": {
+    "selectOutput": "Ausgabespeicherort auswählen",
+    "outputPath": "Ausgabe: {{path}}",
+    "startButton": "PDF verarbeiten",
+    "processing": "Verarbeitung läuft...",
+    "progress": "Fortschritt: {{percent}}%",
+    "success": "PDF erfolgreich verarbeitet!",
+    "error": "Fehler: {{message}}",
+    "stats": "Vorgenommene Ersetzungen: {{count}}"
+  },
+  "errors": {
+    "noMappings": "Bitte fügen Sie mindestens eine Zuordnung hinzu",
+    "noPDF": "Bitte wählen Sie eine PDF-Datei aus",
+    "noOutput": "Bitte wählen Sie einen Ausgabespeicherort aus",
+    "invalidSpreadsheet": "Fehler beim Lesen der Tabelle",
+    "invalidPDF": "Fehler beim Lesen der PDF",
+    "processingFailed": "Fehler beim Verarbeiten der PDF"
+  }
+}

@@ -1,0 +1,27 @@
+// IPC channel names for main-renderer communication
+export const IPC_CHANNELS = {
+  // File operations
+  SELECT_SPREADSHEET: 'select-spreadsheet',
+  READ_SPREADSHEET: 'read-spreadsheet',
+  SELECT_PDF: 'select-pdf',
+  SELECT_OUTPUT: 'select-output',
+
+  // Processing
+  PROCESS_PDF: 'process-pdf',
+  PROCESS_PROGRESS: 'process-progress',
+
+  // Settings
+  GET_SETTINGS: 'get-settings',
+  SET_SETTINGS: 'set-settings',
+
+  // App
+  GET_APP_VERSION: 'get-app-version',
+  CHECK_FOR_UPDATES: 'check-for-updates'
+} as const;
+
+// Supported file extensions
+export const SUPPORTED_SPREADSHEET_EXTENSIONS = [
+  { name: 'Spreadsheet Files', extensions: ['xlsx', 'xls', 'csv'] }
+];
+
+export const SUPPORTED_PDF_EXTENSIONS = [{ name: 'PDF Files', extensions: ['pdf'] }];
