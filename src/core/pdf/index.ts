@@ -1,0 +1,387 @@
+// Main PDF processing entry point
+
+import { PDFPage, PDFStream, PDFArray, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
+import { SheetMapping, ProcessResult, ReplacementStats } from '@shared/types';
+import { readSpreadsheet } from '@core/spreadsheet/reader';
+import { loadPDF, savePDF, getPageCount } from './loader';
+import { parseContentStream } from './content-stream-parser';
+import { extractFonts } from './font-handler';
+import { extractTextElements } from './text-decoder';
+import { performReplacements } from './text-replacer';
+import { rebuildContentStream } from './content-stream-writer';
+import { formatErrorForUser } from './error-handler';
+import { ProgressCallback, ProgressPhase } from './types';
+
+/**
+ * Progress phase ranges
+ */
+const PROGRESS_PHASES = {
+  LOAD_PDF: { start: 0, end: 5 },
+  LOAD_SPREADSHEET: { start: 5, end: 10 },
+  PROCESS_PAGES: { start: 10, end: 95 },
+  SAVE_PDF: { start: 95, end: 100 }
+};
+
+/**
+ * Main PDF processing function
+ */
+export async function processPDF(
+  pdfPath: string,
+  spreadsheetPath: string,
+  mappings: SheetMapping[],
+  outputPath: string,
+  onProgress?: ProgressCallback
+): Promise<ProcessResult> {
+  try {
+    // Helper to report progress
+    const reportProgress = (phase: ProgressPhase, subProgress: number, message: string) => {
+      if (!onProgress) return;
+
+      const range = PROGRESS_PHASES[phase];
+      const totalProgress = range.start + (range.end - range.start) * subProgress;
+      onProgress(Math.round(totalProgress), message);
+    };
+
+    // Phase 1: Load PDF
+    reportProgress('LOAD_PDF', 0, 'Loading PDF document...');
+    const pdfDoc = await loadPDF(pdfPath);
+    const pageCount = getPageCount(pdfDoc);
+    reportProgress('LOAD_PDF', 1, `PDF loaded: ${pageCount} pages`);
+
+    // Phase 2: Load spreadsheet data
+    reportProgress('LOAD_SPREADSHEET', 0, 'Reading spreadsheet data...');
+    const spreadsheetData = await readSpreadsheet(spreadsheetPath);
+    reportProgress('LOAD_SPREADSHEET', 1, 'Spreadsheet loaded');
+
+    console.log('[PDF Processor] Spreadsheet data loaded:', {
+      sheets: Object.keys(spreadsheetData.data),
+      columns: Object.keys(spreadsheetData.data)
+    });
+
+    // Build replacement entries for each mapping
+    const replacementMap = new Map<string, Map<string, number>>(); // mappingId -> (source -> count)
+
+    const allReplacements = mappings.flatMap((mapping) => {
+      const sourceData = spreadsheetData.data[mapping.sourceColumn] || [];
+      const targetData = spreadsheetData.data[mapping.targetColumn] || [];
+
+      console.log(`[PDF Processor] Processing mapping: ${mapping.sheetName}`, {
+        sourceColumn: mapping.sourceColumn,
+        targetColumn: mapping.targetColumn,
+        sourceDataLength: sourceData.length,
+        targetDataLength: targetData.length,
+        sourceDataSample: sourceData.slice(0, 3),
+        targetDataSample: targetData.slice(0, 3)
+      });
+
+      // Build replacement entries
+      const entries: Array<{ source: string; target: string; mappingId: string }> = [];
+
+      // For each row, create a replacement: find targetColumn value, replace with sourceColumn value
+      const maxLength = Math.max(sourceData.length, targetData.length);
+      for (let i = 0; i < maxLength; i++) {
+        const sourceValue = sourceData[i];
+        const targetValue = targetData[i];
+
+        if (targetValue && targetValue.trim() && sourceValue && sourceValue.trim()) {
+          entries.push({
+            source: targetValue.trim(), // What to find in PDF
+            target: sourceValue.trim(), // What to replace with
+            mappingId: `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`
+          });
+        }
+      }
+
+      console.log(
+        `[PDF Processor] Built ${entries.length} replacement entries for mapping ${mapping.sheetName}`
+      );
+      console.log('[PDF Processor] Sample replacements:', entries.slice(0, 3));
+
+      // Initialize replacement count tracking
+      replacementMap.set(
+        `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`,
+        new Map()
+      );
+
+      return entries;
+    });
+
+    console.log(`[PDF Processor] Total replacement entries: ${allReplacements.length}`);
+
+    // Phase 3: Process pages
+    const pages = pdfDoc.getPages();
+    let totalReplacements = 0;
+
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      const page = pages[pageIndex];
+      const pageProgress = pageIndex / pages.length;
+      reportProgress(
+        'PROCESS_PAGES',
+        pageProgress,
+        `Processing page ${pageIndex + 1} of ${pages.length}...`
+      );
+
+      try {
+        console.log(`[PDF Processor] Processing page ${pageIndex + 1}/${pages.length}`);
+
+        // Process this page
+        const pageReplacements = await processPage(page, allReplacements, pageIndex);
+        totalReplacements += pageReplacements.totalCount;
+
+        console.log(
+          `[PDF Processor] Page ${pageIndex + 1} completed: ${pageReplacements.totalCount} replacements`
+        );
+
+        // Update replacement counts
+        for (const [mappingId, counts] of pageReplacements.countsByMapping) {
+          const mappingCounts = replacementMap.get(mappingId);
+          if (mappingCounts) {
+            for (const [source, count] of counts) {
+              mappingCounts.set(source, (mappingCounts.get(source) || 0) + count);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Error processing page ${pageIndex + 1}:`, error);
+        // Continue with next page
+      }
+    }
+
+    reportProgress('PROCESS_PAGES', 1, 'All pages processed');
+
+    // Phase 4: Save PDF
+    reportProgress('SAVE_PDF', 0, 'Saving modified PDF...');
+    await savePDF(pdfDoc, outputPath);
+    reportProgress('SAVE_PDF', 1, 'PDF saved successfully');
+
+    // Build statistics
+    const stats: ReplacementStats[] = [];
+    for (const mapping of mappings) {
+      const mappingId = `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`;
+      const counts = replacementMap.get(mappingId);
+      const totalCount = counts ? Array.from(counts.values()).reduce((a, b) => a + b, 0) : 0;
+
+      stats.push({
+        mappingId,
+        sourceColumn: mapping.sourceColumn,
+        targetColumn: mapping.targetColumn,
+        replacementCount: totalCount
+      });
+    }
+
+    onProgress?.(100, `Complete! Made ${totalReplacements} replacements.`);
+
+    return {
+      success: true,
+      outputPath,
+      stats
+    };
+  } catch (error) {
+    console.error('PDF processing error:', error);
+
+    const errorMessage =
+      error instanceof Error ? formatErrorForUser(error) : 'Unknown error occurred';
+
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}
+
+/**
+ * Process a single PDF page
+ */
+async function processPage(
+  page: PDFPage,
+  replacements: Array<{ source: string; target: string; mappingId: string }>,
+  pageIndex: number
+): Promise<{
+  totalCount: number;
+  countsByMapping: Map<string, Map<string, number>>;
+}> {
+  const countsByMapping = new Map<string, Map<string, number>>();
+
+  // Initialize counters
+  for (const replacement of replacements) {
+    if (!countsByMapping.has(replacement.mappingId)) {
+      countsByMapping.set(replacement.mappingId, new Map());
+    }
+  }
+
+  // Get content stream
+  const contentStream = page.node.Contents();
+  if (!contentStream) {
+    console.log(`[PDF Processor] Page ${pageIndex + 1}: No content stream found`);
+    return { totalCount: 0, countsByMapping };
+  }
+
+  console.log(
+    `[PDF Processor] Page ${pageIndex + 1}: Content stream type:`,
+    contentStream.constructor.name
+  );
+
+  // Handle content stream (can be array or single stream)
+  const streamBytes = await getContentStreamBytes(contentStream, page);
+  if (!streamBytes || streamBytes.length === 0) {
+    console.warn(
+      `[PDF Processor] Page ${pageIndex + 1}: No stream bytes extracted (got ${streamBytes?.length || 0} bytes)`
+    );
+    return { totalCount: 0, countsByMapping };
+  }
+
+  console.log(
+    `[PDF Processor] Page ${pageIndex + 1}: Successfully extracted ${streamBytes.length} bytes from content stream`
+  );
+
+  // Parse content stream
+  const operations = parseContentStream(streamBytes, pageIndex);
+  console.log(`[PDF Processor] Page ${pageIndex + 1}: Parsed ${operations.length} operations`);
+
+  // Extract fonts
+  const fontMap = await extractFonts(page);
+  console.log(
+    `[PDF Processor] Page ${pageIndex + 1}: Found ${fontMap.size} fonts`,
+    Array.from(fontMap.keys())
+  );
+
+  // Extract text elements
+  const textElements = extractTextElements(operations, fontMap);
+  console.log(
+    `[PDF Processor] Page ${pageIndex + 1}: Extracted ${textElements.length} text elements`
+  );
+
+  if (textElements.length > 0) {
+    console.log(
+      '[PDF Processor] Sample text from page:',
+      textElements
+        .slice(0, 5)
+        .map((el) => el.text)
+        .join(' | ')
+    );
+  }
+
+  // Perform replacements
+  let totalCount = 0;
+  console.log(
+    `[PDF Processor] Page ${pageIndex + 1}: Attempting ${replacements.length} replacements`
+  );
+
+  for (const replacement of replacements) {
+    const result = performReplacements(textElements, [
+      { source: replacement.source, target: replacement.target }
+    ]);
+
+    const stat = result.get(replacement.source);
+    if (stat && stat.count > 0) {
+      console.log(
+        `[PDF Processor] Page ${pageIndex + 1}: Replaced "${replacement.source}" → "${replacement.target}" (${stat.count} times)`
+      );
+      totalCount += stat.count;
+
+      const mappingCounts = countsByMapping.get(replacement.mappingId)!;
+      mappingCounts.set(
+        replacement.source,
+        (mappingCounts.get(replacement.source) || 0) + stat.count
+      );
+    }
+
+    if (stat && stat.warnings.length > 0) {
+      console.warn(
+        `[PDF Processor] Page ${pageIndex + 1}: Warnings for "${replacement.source}":`,
+        stat.warnings
+      );
+    }
+  }
+
+  // Rebuild content stream if modifications were made
+  if (totalCount > 0) {
+    const newStreamBytes = rebuildContentStream(operations);
+
+    // Update page content stream
+    await updatePageContentStream(page, contentStream, newStreamBytes);
+  }
+
+  return { totalCount, countsByMapping };
+}
+
+/**
+ * Get content stream bytes from content stream reference
+ * IMPORTANT: Properly decodes streams with filters (FlateDecode, etc.)
+ */
+async function getContentStreamBytes(
+  contentStream: unknown,
+  page: PDFPage
+): Promise<Uint8Array | null> {
+  try {
+    // Content stream can be a single stream or an array of streams
+    if (contentStream instanceof PDFStream) {
+      return await decodeStream(contentStream);
+    }
+
+    if (contentStream instanceof PDFArray) {
+      // Multiple content streams - concatenate them
+      const streams = contentStream.asArray();
+      const allBytes: number[] = [];
+
+      for (const streamRef of streams) {
+        if (streamRef instanceof PDFStream) {
+          const bytes = await decodeStream(streamRef);
+          if (bytes) {
+            allBytes.push(...Array.from(bytes));
+          }
+        }
+      }
+
+      return new Uint8Array(allBytes);
+    }
+
+    // Try to get from page node directly
+    const pageDict = page.node;
+    const contents = pageDict.get(pageDict.context.obj('Contents'));
+
+    if (contents instanceof PDFStream) {
+      return await decodeStream(contents);
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('[PDF Processor] Error getting content stream bytes:', error);
+    return null;
+  }
+}
+
+/**
+ * Decode a PDF stream, handling filters like FlateDecode
+ */
+async function decodeStream(stream: PDFStream): Promise<Uint8Array | null> {
+  try {
+    const decodedStream = decodePDFRawStream(stream as PDFRawStream);
+    return decodedStream.decode();
+  } catch (error) {
+    console.warn('[PDF Processor] Error decoding stream:', error);
+    return null;
+  }
+}
+
+/**
+ * Update page content stream with new bytes
+ */
+async function updatePageContentStream(
+  page: PDFPage,
+  _originalStream: unknown,
+  newBytes: Uint8Array
+): Promise<void> {
+  try {
+    const context = page.doc.context;
+
+    // Create new stream with modified content
+    const newStream = context.stream(newBytes);
+
+    // Update page's Contents entry
+    page.node.set(context.obj('Contents'), newStream);
+  } catch (error) {
+    console.warn('Error updating content stream:', error);
+    throw error;
+  }
+}

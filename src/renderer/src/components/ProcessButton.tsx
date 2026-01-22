@@ -2,7 +2,7 @@ import { Box, Button, Typography, Alert, LinearProgress, Paper } from '@mui/mate
 import { PlayArrow, Save } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function ProcessButton() {
   const { t } = useTranslation();
@@ -22,6 +22,13 @@ export default function ProcessButton() {
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Set up progress listener
+  useEffect(() => {
+    window.electron.onProcessProgress((progress, message) => {
+      setProgress(progress, message);
+    });
+  }, [setProgress]);
 
   // Check if all selected sheets have complete mappings
   const allMappingsComplete =
@@ -58,19 +65,35 @@ export default function ProcessButton() {
       setSuccess(false);
       setProgress(0, t('process.processing'));
 
-      // Simulate progress for now - will be replaced with actual PDF processing
-      for (let i = 0; i <= 100; i += 10) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        setProgress(i, `${t('process.processing')} ${i}%`);
+      // Convert sheetMappings to array
+      const mappingsArray = Object.values(sheetMappings);
+
+      // Call actual PDF processing
+      const result = await window.electron.processPDF(
+        pdfPath,
+        spreadsheetPath,
+        mappingsArray,
+        outputPath
+      );
+
+      if (result.success) {
+        setSuccess(true);
+        setProgress(100, t('process.success'));
+
+        // Show statistics if available
+        if (result.stats && result.stats.length > 0) {
+          const totalReplacements = result.stats.reduce(
+            (sum, stat) => sum + stat.replacementCount,
+            0
+          );
+          setProgress(100, `${t('process.success')} ${totalReplacements} replacements made.`);
+        }
+      } else {
+        throw new Error(result.error || t('errors.processingFailed'));
       }
-
-      // TODO: Call actual PDF processing here
-      // const result = await window.electron.processPDF(pdfPath, spreadsheetPath, mappings, outputPath);
-
-      setSuccess(true);
-      setProgress(100, t('process.success'));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setProgress(0, '');
     } finally {
       setProcessing(false);
     }

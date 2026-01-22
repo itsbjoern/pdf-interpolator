@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(node --version:*)",
-      "Bash(npm:*)"
+      "Bash(npm:*)",
+      "Bash(cat:*)"
     ]
   }
 }

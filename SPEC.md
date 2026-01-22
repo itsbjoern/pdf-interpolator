@@ -5,10 +5,9 @@ This application is meant to take the data from a spreadsheet and use it as a lo
 The application has to be very user friendly as it will be used by non-technical users. The application has to work totally offline without requiring an internet connection.
 
 The rough steps the application will take are as follows:
-1. Select a spreadsheet
-2. Set up the mappings between spreadsheet columns
-3. Select a PDF document
-4. Generate a new PDF document with the replacements made
+1. Select a spreadsheet & set up the mappings between spreadsheet columns
+2. Select a PDF document
+3. Generate a new PDF document with the replacements made
 
 ## Requirements
 - The application must be compatible with Windows and macOS.

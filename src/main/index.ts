@@ -10,6 +10,7 @@ import {
   SUPPORTED_PDF_EXTENSIONS
 } from '@shared/constants';
 import { readSpreadsheet } from '@core/spreadsheet/reader';
+import { processPDF } from '@core/pdf';
 
 // ESM compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -121,6 +122,41 @@ function setupIpcHandlers() {
         return readSpreadsheet(filePath, selectedSheets);
       } catch (error) {
         throw new Error(error instanceof Error ? error.message : String(error));
+      }
+    }
+  );
+
+  // PDF processing
+  ipcMain.handle(
+    IPC_CHANNELS.PROCESS_PDF,
+    async (
+      event,
+      pdfPath: string,
+      spreadsheetPath: string,
+      mappings: any[],
+      outputPath: string
+    ) => {
+      try {
+        // Progress callback to send updates to renderer
+        const onProgress = (progress: number, message: string) => {
+          event.sender.send(IPC_CHANNELS.PROCESS_PROGRESS, progress, message);
+        };
+
+        // Call PDF processor
+        const result = await processPDF(
+          pdfPath,
+          spreadsheetPath,
+          mappings,
+          outputPath,
+          onProgress
+        );
+
+        return result;
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
       }
     }
   );

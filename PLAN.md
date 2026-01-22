@@ -27,18 +27,23 @@ pdf-spreadsheet-rewriter/
 ├── src/
 │   ├── main/                 # Electron main process
 │   │   ├── index.ts         # Main entry point
+│   │   ├── index.d.ts       # Type definitions for main process
 │   │   ├── updater.ts       # Auto-update logic
 │   │   └── fileHandlers.ts  # File system operations
+│   ├── preload/             # Electron preload scripts
+│   │   ├── index.ts       # Expose safe APIs to renderer
+│   │   └── index.d.ts       # Type definitions for preload
 │   ├── renderer/            # Electron renderer process (UI)
-│   │   ├── App.tsx         # Main React component
-│   │   ├── components/     # React components
-│   │   │   ├── SpreadsheetSelector.tsx
-│   │   │   ├── ColumnMapping.tsx
-│   │   │   ├── PDFSelector.tsx
-│   │   │   └── ProcessButton.tsx
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── i18n/           # Translation files
-│   │   └── store/          # State management
+│   │   ├── src
+|   │   │   ├── App.tsx         # Main React component
+|   │   │   ├── components/     # React components
+|   │   │   │   ├── SpreadsheetSelector.tsx
+|   │   │   │   ├── PDFSelector.tsx
+|   │   │   │   └── ProcessButton.tsx
+|   │   │   ├── hooks/          # Custom React hooks
+|   │   │   ├── i18n/           # Translation files
+|   │   │   └── store/          # State management
+│   │   └── index.html      # HTML template
 │   ├── core/               # Core business logic
 │   │   ├── pdf/
 │   │   │   ├── parser.ts       # PDF text extraction
@@ -305,8 +310,8 @@ function rebuildContentStream(operations: PDFOperation[]): Uint8Array
 
 1. **Initial Setup**
    - Clone/create repository
-   - Run `npm install`
-   - Start development: `npm run dev`
+   - Run `bun install`
+   - Start development: `bun run dev`
 
 2. **Development Process**
    - Hot reload for renderer (React) changes
@@ -314,8 +319,8 @@ function rebuildContentStream(operations: PDFOperation[]): Uint8Array
    - Use Chrome DevTools for debugging
 
 3. **Building**
-   - `npm run build` - Build application
-   - `npm run package` - Create distributable packages
+   - `bun run build` - Build application
+   - `bun run package` - Create distributable packages
 
 4. **Release**
    - Tag version in git
