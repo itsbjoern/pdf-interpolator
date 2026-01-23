@@ -29,7 +29,7 @@ export default function PDFSelector() {
   return (
     <Box>
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
-        <Button variant="contained" startIcon={<PictureAsPdf />} onClick={handleSelectPDF}>
+        <Button variant="outlined" startIcon={<PictureAsPdf />} onClick={handleSelectPDF}>
           {t('pdf.selectButton')}
         </Button>
 

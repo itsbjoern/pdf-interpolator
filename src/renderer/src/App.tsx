@@ -64,8 +64,8 @@ function App() {
           </Stepper>
         </Box>
 
-        <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
+        <Paper elevation={3} sx={{ p: 2, mb: 3 }}>
+          <Typography variant="body1" gutterBottom>
             {t('steps.selectSpreadsheet')}
           </Typography>
           <Divider sx={{ mb: 2 }} />
@@ -75,13 +75,13 @@ function App() {
         <Paper
           elevation={3}
           sx={{
-            p: 3,
+            p: 2,
             mb: 3,
             opacity: activeStep < 2 ? 0.5 : 1,
             pointerEvents: activeStep < 2 ? 'none' : 'auto'
           }}
         >
-          <Typography variant="h6" gutterBottom>
+          <Typography variant="body1" gutterBottom>
             {t('steps.selectPDF')}
           </Typography>
           <Divider sx={{ mb: 2 }} />
@@ -91,12 +91,12 @@ function App() {
         <Paper
           elevation={3}
           sx={{
-            p: 3,
+            p: 2,
             opacity: activeStep < 3 ? 0.5 : 1,
             pointerEvents: activeStep < 3 ? 'none' : 'auto'
           }}
         >
-          <Typography variant="h6" gutterBottom>
+          <Typography variant="body1" gutterBottom>
             {t('steps.process')}
           </Typography>
           <Divider sx={{ mb: 2 }} />

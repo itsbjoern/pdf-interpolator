@@ -105,14 +105,12 @@ export default function ProcessButton() {
 
   return (
     <Box>
-      <Box sx={{ mb: 3 }}>
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
         <Button
           variant="outlined"
           startIcon={<Save />}
           onClick={handleSelectOutput}
           disabled={isProcessing}
-          fullWidth
-          sx={{ mb: 2 }}
         >
           {t('process.selectOutput')}
         </Button>

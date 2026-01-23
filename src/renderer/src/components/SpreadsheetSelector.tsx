@@ -80,7 +80,7 @@ export default function SpreadsheetSelector() {
     <Box>
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
         <Button
-          variant="contained"
+          variant="outlined"
           startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <FolderOpen />}
           onClick={handleSelectSpreadsheet}
           disabled={loading}
