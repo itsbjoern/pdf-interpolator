@@ -258,10 +258,12 @@ async function processPage(
     extractTextFromBlock(block, fontMap);
 
     // Perform replacements on this block
-    const blockReplacements = replacements.map((r) => ({
-      source: r.source,
-      target: r.target
-    }));
+    const blockReplacements = replacements
+      .map((r) => ({
+        source: r.source,
+        target: r.target
+      }))
+      .sort((a, b) => b.source.length - a.source.length); // Longer first
 
     const result = performReplacementsOnBlock(block, blockReplacements, fontMap);
 

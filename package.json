@@ -1,5 +1,5 @@
 {
-  "name": "pdf-spreadsheet-rewriter",
+  "name": "pdf-rewriter",
   "version": "0.1.0",
   "description": "Desktop application to replace text in PDFs using spreadsheet data",
   "main": "./out/main/index.js",
@@ -63,8 +63,8 @@
     "vite": "^7.2.6"
   },
   "build": {
-    "appId": "com.pdf-spreadsheet-rewriter",
-    "productName": "PDF Spreadsheet Rewriter",
+    "appId": "com.bjoernf.pdf-rewriter",
+    "productName": "PDF Rewriter",
     "directories": {
       "output": "release"
     },

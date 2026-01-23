@@ -7,10 +7,6 @@ import {
   FormControlLabel,
   Checkbox,
   Paper,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Autocomplete,
   TextField
 } from '@mui/material';
