@@ -1,35 +1,16 @@
 /**
- * WinAnsiEncoding table (Windows Code Page 1252)
+ * WinAnsiEncoding table (PDF specification)
+ * Note: Positions 128-159 are UNDEFINED in the PDF WinAnsiEncoding specification.
+ * These are part of Windows-1252 but should only be used if explicitly defined
+ * via Differences array or ToUnicode CMap.
+ *
+ * This is the base encoding - actual fonts may add characters via Differences.
  */
 export const WIN_ANSI_ENCODING: Map<number, string> = new Map([
+  // 0-127: Standard ASCII
   ...Array.from({ length: 128 }, (_, i) => [i, String.fromCharCode(i)] as [number, string]),
-  [128, '\u20AC'],
-  [130, '\u201A'],
-  [131, '\u0192'],
-  [132, '\u201E'],
-  [133, '\u2026'],
-  [134, '\u2020'],
-  [135, '\u2021'],
-  [136, '\u02C6'],
-  [137, '\u2030'],
-  [138, '\u0160'],
-  [139, '\u2039'],
-  [140, '\u0152'],
-  [142, '\u017D'],
-  [145, '\u2018'],
-  [146, '\u2019'],
-  [147, '\u201C'],
-  [148, '\u201D'],
-  [149, '\u2022'],
-  [150, '\u2013'],
-  [151, '\u2014'],
-  [152, '\u02DC'],
-  [153, '\u2122'],
-  [154, '\u0161'],
-  [155, '\u203A'],
-  [156, '\u0153'],
-  [158, '\u017E'],
-  [159, '\u0178'],
+  // 128-159: UNDEFINED in PDF WinAnsiEncoding spec - do not include
+  // 160-255: Latin-1 supplement
   ...Array.from(
     { length: 96 },
     (_, i) => [i + 160, String.fromCharCode(i + 160)] as [number, string]

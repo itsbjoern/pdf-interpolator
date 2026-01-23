@@ -11,6 +11,7 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
   const textElements: TextElement[] = [];
   const usedFonts = new Map<string, FontInfo>();
   let currentFont: FontInfo | null = null;
+  let currentFontSize = 12; // Default font size
 
   for (const operation of block.operations) {
     const { operator, operands } = operation;
@@ -20,6 +21,12 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       const fontName = operands[0] as string;
       const cleanFontName = fontName.startsWith('/') ? fontName.slice(1) : fontName;
       currentFont = fontMap.get(cleanFontName) || fontMap.get(fontName) || null;
+
+      // Track font size
+      const fontSize = operands[1];
+      if (typeof fontSize === 'number') {
+        currentFontSize = fontSize;
+      }
 
       if (currentFont) {
         usedFonts.set(cleanFontName, currentFont);
@@ -97,7 +104,8 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
     }
   }
 
-  // Update block with extracted text
+  // Update block with extracted text and font size
   block.textElements = textElements;
   block.fonts = usedFonts;
+  block.currentFontSize = currentFontSize;
 }

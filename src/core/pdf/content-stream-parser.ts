@@ -31,7 +31,8 @@ export function parseContentStreamWithPositions(
           operations: [op],
           fonts: new Map(),
           textElements: [],
-          modified: false
+          modified: false,
+          currentFontSize: 12 // Default, will be updated by extractTextFromBlock
         };
       } else if (op.operator === 'ET' && currentBlock) {
         // End text block

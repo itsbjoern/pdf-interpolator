@@ -1,7 +1,15 @@
 // Text replacement logic
 
-import { ReplacementEntry, PDFOperation, TextBlock, FontInfo } from './types';
-import { encodeText } from './font-handler';
+import {
+  ReplacementEntry,
+  PDFOperation,
+  TextBlock,
+  FontInfo,
+  EncodedText,
+  PDFValue
+} from './types';
+import { encodeText, encodeTextWithFallback } from './font-handler';
+import { FontRegistry } from './font-registry';
 
 /**
  * Replacement statistics
@@ -13,19 +21,109 @@ export interface ReplacementResult {
 }
 
 /**
+ * Create PDF operations for multi-font encoded text
+ * Injects Tf operators when font switches are needed
+ * IMPORTANT: Reverts back to original font after replacement
+ */
+function createOperationsForMultiFont(
+  encodedText: EncodedText,
+  originalFont: FontInfo,
+  currentFontSize: number
+): PDFOperation[] {
+  const operations: PDFOperation[] = [];
+
+  if (encodedText.segments.length === 0) {
+    return operations;
+  }
+
+  let lastFont = originalFont;
+
+  for (const segment of encodedText.segments) {
+    // Inject Tf operator if font changed
+    if (segment.font.name !== lastFont.name) {
+      const fontName = segment.font.name.startsWith('/')
+        ? segment.font.name
+        : `/${segment.font.name}`;
+
+      operations.push({
+        operator: 'Tf',
+        operands: [fontName, currentFontSize],
+        startIndex: 0,
+        endIndex: 0
+      });
+
+      lastFont = segment.font;
+
+      console.log(
+        `[Text Replacer] Injecting Tf operator: ${fontName} ${currentFontSize}`
+      );
+    }
+
+    // Add Tj operator with the text segment
+    operations.push({
+      operator: 'Tj',
+      operands: [segment.bytes],
+      startIndex: 0,
+      endIndex: 0
+    });
+  }
+
+  // CRITICAL: Revert to original font if we switched away from it
+  // This ensures subsequent operations in the same text block use the correct font
+  if (lastFont.name !== originalFont.name) {
+    const originalFontName = originalFont.name.startsWith('/')
+      ? originalFont.name
+      : `/${originalFont.name}`;
+
+    operations.push({
+      operator: 'Tf',
+      operands: [originalFontName, currentFontSize],
+      startIndex: 0,
+      endIndex: 0
+    });
+
+    console.log(
+      `[Text Replacer] Reverting to original font: ${originalFontName} ${currentFontSize}`
+    );
+  }
+
+  return operations;
+}
+
+/**
+ * Extract spacing adjustments from TJ array
+ * Returns array of numbers representing spacing values in the array
+ */
+function extractTJSpacing(tjArray: PDFValue[]): number[] {
+  const spacing: number[] = [];
+
+  for (const item of tjArray) {
+    if (typeof item === 'number') {
+      spacing.push(item);
+    }
+  }
+
+  return spacing;
+}
+
+/**
  * Perform text replacements on a single TextBlock (NEW surgical approach)
  * Updates the block in-place and sets the modified flag
+ * Uses FontRegistry for cross-font character fallback
  */
 export function performReplacementsOnBlock(
   block: TextBlock,
   replacements: ReplacementEntry[],
-  fontMap: Map<string, FontInfo>
+  fontMap: Map<string, FontInfo>,
+  fontRegistry?: FontRegistry
 ): ReplacementResult {
   let blockModified = false;
   let totalCount = 0;
   const warnings: string[] = [];
 
-  for (const element of block.textElements) {
+  for (let i = 0; i < block.textElements.length; i++) {
+    const element = block.textElements[i];
+
     for (const replacement of replacements) {
       const { source, target } = replacement;
 
@@ -34,34 +132,99 @@ export function performReplacementsOnBlock(
         continue;
       }
 
-      // Try to encode the target text with the current font
-      const encodedTarget = encodeText(target, element.font, fontMap);
-
-      if (!encodedTarget) {
-        const warning = `Cannot encode "${target}" with font ${element.font.name}`;
-        if (!warnings.includes(warning)) {
-          warnings.push(warning);
-        }
-        continue;
-      }
-
       // Perform the replacement
       const newText = element.text.replace(new RegExp(escapeRegex(source), 'g'), target);
       const count = (element.text.match(new RegExp(escapeRegex(source), 'g')) || []).length;
 
-      // Update the operation with new text
-      const success = updateOperationText(
-        element.operation,
-        element.text,
-        newText,
-        element.font,
-        fontMap
-      );
+      // Try encoding with fallback if registry available
+      let encodedText: EncodedText | null = null;
+      if (fontRegistry) {
+        encodedText = encodeTextWithFallback(newText, element.font, fontRegistry);
 
-      if (success) {
-        blockModified = true;
-        totalCount += count;
-        element.text = newText;
+        if (!encodedText.success) {
+          const warning = `Cannot encode "${newText}" - no suitable font found`;
+          if (!warnings.includes(warning)) {
+            warnings.push(warning);
+          }
+          continue;
+        }
+      } else {
+        // Fallback to old encoding method
+        const encoded = encodeText(newText, element.font, fontMap);
+        if (!encoded) {
+          const warning = `Cannot encode "${newText}" with font ${element.font.name}`;
+          if (!warnings.includes(warning)) {
+            warnings.push(warning);
+          }
+          continue;
+        }
+        // Convert to EncodedText format
+        encodedText = {
+          segments: [{ bytes: encoded, font: element.font }],
+          success: true
+        };
+      }
+
+      // Check if we need multi-font replacement
+      const needsMultiFontReplacement =
+        encodedText.segments.length > 1 ||
+        (encodedText.segments.length === 1 && encodedText.segments[0].font.name !== element.font.name);
+
+      if (needsMultiFontReplacement) {
+        // Complex case: need font switching
+        console.log(
+          `[Text Replacer] Multi-font replacement needed for "${newText}" (${encodedText.segments.length} segments)`
+        );
+        console.log(
+          `[Text Replacer] Original font: ${element.font.name}, Original operation: ${element.operation.operator}`
+        );
+
+        const newOperations = createOperationsForMultiFont(
+          encodedText,
+          element.font,
+          block.currentFontSize
+        );
+
+        console.log(
+          `[Text Replacer] Created ${newOperations.length} replacement operations:`
+        );
+        for (const op of newOperations) {
+          console.log(`[Text Replacer]   - ${op.operator}`);
+        }
+
+        // Store operation replacement
+        const opIndex = block.operations.indexOf(element.operation);
+        if (opIndex !== -1) {
+          if (!block.operationReplacements) {
+            block.operationReplacements = new Map();
+          }
+          block.operationReplacements.set(opIndex, newOperations);
+          console.log(
+            `[Text Replacer] Stored replacement for operation at index ${opIndex}`
+          );
+          blockModified = true;
+          totalCount += count;
+          element.text = newText;
+        } else {
+          console.warn(
+            `[Text Replacer] WARNING: Could not find operation in block.operations array!`
+          );
+        }
+      } else {
+        // Simple case: single font, update in place
+        const success = updateOperationText(
+          element.operation,
+          element.text,
+          newText,
+          element.font,
+          fontMap
+        );
+
+        if (success) {
+          blockModified = true;
+          totalCount += count;
+          element.text = newText;
+        }
       }
     }
   }

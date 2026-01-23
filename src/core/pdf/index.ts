@@ -11,6 +11,7 @@ import { performReplacementsOnBlock } from './text-replacer';
 import { patchContentStream } from './content-stream-writer';
 import { formatErrorForUser } from './error-handler';
 import { ProgressCallback, ProgressPhase } from './types';
+import { FontRegistry } from './font-registry';
 
 /**
  * Progress phase ranges
@@ -252,6 +253,23 @@ async function processPage(
     Array.from(fontMap.keys())
   );
 
+  // Build font registry for cross-font character fallback
+  const fontRegistry = new FontRegistry();
+  for (const font of fontMap.values()) {
+    fontRegistry.addFont(font);
+  }
+
+  // Debug: Log font families
+  const families = fontRegistry.getFamilies();
+  console.log(
+    `[PDF Processor] Page ${pageIndex + 1}: Built font registry with ${families.size} font families`
+  );
+  for (const [familyName, family] of families) {
+    console.log(
+      `[PDF Processor]   Family "${familyName}": ${family.fonts.size} fonts (${Array.from(family.fonts.keys()).join(', ')})`
+    );
+  }
+
   // Process each text block independently
   for (const block of parsed.textBlocks) {
     // Extract text from this block only
@@ -265,7 +283,7 @@ async function processPage(
       }))
       .sort((a, b) => b.source.length - a.source.length); // Longer first
 
-    const result = performReplacementsOnBlock(block, blockReplacements, fontMap);
+    const result = performReplacementsOnBlock(block, blockReplacements, fontMap, fontRegistry);
 
     // Track stats if modified
     if (result.modified && result.count > 0) {

@@ -68,6 +68,22 @@ export type ProgressCallback = (progress: number, message: string) => void;
 export type ProgressPhase = 'LOAD_PDF' | 'LOAD_SPREADSHEET' | 'PROCESS_PAGES' | 'SAVE_PDF';
 
 /**
+ * Encoded text segment with font information
+ */
+export interface EncodedSegment {
+  bytes: Uint8Array;  // Encoded bytes
+  font: FontInfo;     // Font used for this segment
+}
+
+/**
+ * Result of encoding text with cross-font fallback
+ */
+export interface EncodedText {
+  segments: EncodedSegment[];  // May have multiple segments if fonts switched
+  success: boolean;            // Whether encoding succeeded
+}
+
+/**
  * Represents a BT/ET text block with its position in original stream
  * This enables surgical replacement - only modified blocks are rebuilt
  */
@@ -80,6 +96,8 @@ export interface TextBlock {
   fonts: Map<string, FontInfo>; // Fonts used in this block
   textElements: TextElement[]; // Decoded text in this block
   modified: boolean;         // Has this block been modified?
+  currentFontSize: number;   // Track font size for Tf operator injection
+  operationReplacements?: Map<number, PDFOperation[]>; // Index → replacement operations
 }
 
 /**

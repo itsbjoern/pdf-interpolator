@@ -5,6 +5,7 @@ import { PDFValue, ParsedContentStream } from './types';
 /**
  * Rebuild content stream from parsed data
  * Rebuilds entire stream from all operations (preserves graphics)
+ * Handles operation replacements for multi-font text
  */
 export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
   const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
@@ -13,103 +14,215 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
     return parsed.originalBytes;
   }
 
+  // Build a map of operation -> TextBlock for quick lookup
+  const operationToBlock = new Map<any, { block: any; localIndex: number }>();
+  for (const block of parsed.textBlocks) {
+    for (let i = 0; i < block.operations.length; i++) {
+      operationToBlock.set(block.operations[i], { block, localIndex: i });
+    }
+  }
+
+  // Debug: Log blocks with replacements
+  for (const block of modifiedBlocks) {
+    if (block.operationReplacements && block.operationReplacements.size > 0) {
+      console.log(
+        `[Content Stream Writer] Block has ${block.operationReplacements.size} operation replacement(s)`
+      );
+      for (const [idx, ops] of block.operationReplacements) {
+        console.log(
+          `[Content Stream Writer]   Index ${idx}: ${ops.length} replacement operations`
+        );
+      }
+    }
+  }
+
   // Rebuild entire stream from all operations
-  // This preserves graphics but doesn't try to do byte-level patching
-  const parts: string[] = [];
+  // Build bytes directly to avoid string encoding issues with bytes 128-255
+  const byteArrays: Uint8Array[] = [];
 
   for (const operation of parsed.allOperations) {
-    // Serialize operands
-    for (const operand of operation.operands) {
-      const serialized = serializeValue(operand);
-      if (serialized) {
-        parts.push(serialized);
-        parts.push(' ');
+    // Check if this operation belongs to a text block with replacements
+    const blockInfo = operationToBlock.get(operation);
+
+    if (blockInfo && blockInfo.block.operationReplacements) {
+      const replacements = blockInfo.block.operationReplacements.get(blockInfo.localIndex);
+
+      if (replacements && replacements.length > 0) {
+        // Emit replacement operations instead of original
+        console.log(
+          `[Content Stream Writer] Replacing operation ${operation.operator} at index ${blockInfo.localIndex} with ${replacements.length} new operations`
+        );
+
+        for (const replOp of replacements) {
+          console.log(`[Content Stream Writer]   Emitting: ${replOp.operator}`);
+          byteArrays.push(serializeOperation(replOp));
+        }
+        continue; // Skip original operation
       }
     }
 
-    // Add operator
-    parts.push(operation.operator);
-    parts.push('\n');
+    // Serialize original operation (may have modified operands from simple replacement)
+    byteArrays.push(serializeOperation(operation));
   }
 
-  return new TextEncoder().encode(parts.join(''));
+  // Concatenate all byte arrays
+  const totalLength = byteArrays.reduce((sum, arr) => sum + arr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arr of byteArrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
+}
+
+/**
+ * Serialize a single PDF operation to bytes
+ */
+function serializeOperation(operation: any): Uint8Array {
+  const parts: Uint8Array[] = [];
+
+  // Serialize operands
+  for (const operand of operation.operands) {
+    const serialized = serializeValueToBytes(operand);
+    if (serialized.length > 0) {
+      parts.push(serialized);
+      parts.push(new Uint8Array([0x20])); // space
+    }
+  }
+
+  // Add operator
+  const opBytes = new Uint8Array(operation.operator.length);
+  for (let i = 0; i < operation.operator.length; i++) {
+    opBytes[i] = operation.operator.charCodeAt(i);
+  }
+  parts.push(opBytes);
+  parts.push(new Uint8Array([0x0a])); // newline
+
+  // Concatenate parts
+  const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
 }
 
 
 /**
- * Serialize a PDF value to string
+ * Serialize a PDF value to bytes (avoids string encoding issues)
  */
-function serializeValue(value: PDFValue): string {
+function serializeValueToBytes(value: PDFValue): Uint8Array {
   // Number
   if (typeof value === 'number') {
-    return value.toString();
+    const str = value.toString();
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      bytes[i] = str.charCodeAt(i);
+    }
+    return bytes;
   }
 
   // String (name like /F1)
   if (typeof value === 'string') {
-    return value;
+    const bytes = new Uint8Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      bytes[i] = value.charCodeAt(i);
+    }
+    return bytes;
   }
 
   // Byte array (text string)
   if (value instanceof Uint8Array) {
-    return bytesToStringLiteral(value);
+    return bytesToPDFStringLiteral(value);
   }
 
   // Array
   if (Array.isArray(value)) {
-    const elements = value.map(serializeValue).filter(Boolean);
-    return `[${elements.join(' ')}]`;
+    const parts: Uint8Array[] = [];
+    parts.push(new Uint8Array([0x5b])); // [
+
+    for (let i = 0; i < value.length; i++) {
+      if (i > 0) {
+        parts.push(new Uint8Array([0x20])); // space
+      }
+      parts.push(serializeValueToBytes(value[i]));
+    }
+
+    parts.push(new Uint8Array([0x5d])); // ]
+
+    const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      result.set(part, offset);
+      offset += part.length;
+    }
+    return result;
   }
 
   // Dictionary (shouldn't appear in content streams, but handle anyway)
   if (typeof value === 'object' && value !== null) {
-    return '<<>>';
+    return new Uint8Array([0x3c, 0x3c, 0x3e, 0x3e]); // <<>>
   }
 
-  return '';
+  return new Uint8Array(0);
 }
 
 /**
  * Convert bytes to PDF string literal with proper escaping
+ * Returns bytes directly to avoid JavaScript string encoding issues
  */
-function bytesToStringLiteral(bytes: Uint8Array): string {
-  let result = '(';
+function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
+  const result: number[] = [];
+
+  result.push(0x28); // (
 
   for (const byte of bytes) {
-    // Escape special characters
+    // Escape special characters that have meaning in PDF strings
     if (byte === 0x28) {
       // (
-      result += '\\(';
+      result.push(0x5c, 0x28); // \(
     } else if (byte === 0x29) {
       // )
-      result += '\\)';
+      result.push(0x5c, 0x29); // \)
     } else if (byte === 0x5c) {
       // \
-      result += '\\\\';
+      result.push(0x5c, 0x5c); // \\
     } else if (byte === 0x0a) {
       // \n
-      result += '\\n';
+      result.push(0x5c, 0x6e); // \n
     } else if (byte === 0x0d) {
       // \r
-      result += '\\r';
+      result.push(0x5c, 0x72); // \r
     } else if (byte === 0x09) {
       // \t
-      result += '\\t';
+      result.push(0x5c, 0x74); // \t
     } else if (byte === 0x08) {
       // \b
-      result += '\\b';
+      result.push(0x5c, 0x62); // \b
     } else if (byte === 0x0c) {
       // \f
-      result += '\\f';
-    } else if (byte >= 32 && byte <= 126) {
-      // Printable ASCII
-      result += String.fromCharCode(byte);
+      result.push(0x5c, 0x66); // \f
     } else {
-      // Octal escape for non-printable characters
-      result += '\\' + byte.toString(8).padStart(3, '0');
+      // All other bytes (including 128-255) written as-is
+      // This preserves extended ASCII characters like Euro sign
+      result.push(byte);
     }
   }
 
-  result += ')';
-  return result;
+  result.push(0x29); // )
+
+  const resultBytes = new Uint8Array(result);
+
+  // Debug: Log if Euro sign (byte 128) is present
+  if (bytes.includes(128)) {
+    console.log('[Content Stream Writer] Writing Euro sign (byte 128)');
+    console.log('[Content Stream Writer] Input bytes:', Array.from(bytes));
+    console.log('[Content Stream Writer] Output bytes:', Array.from(resultBytes));
+  }
+
+  return resultBytes;
 }

@@ -8,13 +8,14 @@ import {
   decodePDFRawStream,
   PDFRawStream
 } from 'pdf-lib';
-import { FontInfo, FontEncoding } from './types';
+import { FontInfo, FontEncoding, EncodedText, EncodedSegment } from './types';
 import {
   COMMON_GLYPH_MAP,
   MAC_ROMAN_ENCODING,
   STANDARD_ENCODING,
   WIN_ANSI_ENCODING
 } from './font-encodings';
+import { FontRegistry } from './font-registry';
 
 /**
  * Extract fonts from a PDF page
@@ -178,6 +179,17 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
       }
     }
 
+    // Debug: Check if Euro sign is in the maps
+    if (encodingMap.has(128)) {
+      console.log(
+        `[Font Handler] Font ${fontName}: byte 128 maps to "${encodingMap.get(128)}" (${encodingMap.get(128)?.charCodeAt(0)})`
+      );
+    }
+    const euroCode = reverseMap.get('€');
+    if (euroCode !== undefined) {
+      console.log(`[Font Handler] Font ${fontName}: Euro sign (€) encodes to byte ${euroCode}`);
+    }
+
     return {
       name: fontName,
       baseFont,
@@ -322,6 +334,9 @@ export function decodeText(bytes: Uint8Array, font: FontInfo): string {
     for (let i = 0; i < bytes.length; i += 2) {
       const code = (bytes[i] << 8) | (bytes[i + 1] || 0);
       const char = font.encodingMap.get(code) || String.fromCharCode(code);
+      if (char === '€') {
+        console.log(`[Font Handler] Decoded Euro from byte ${code} in font ${font.name}`);
+      }
       text += char;
     }
   } else {
@@ -330,6 +345,10 @@ export function decodeText(bytes: Uint8Array, font: FontInfo): string {
       const char = font.encodingMap.get(byte);
       if (char !== undefined) {
         text += char;
+        // Debug: Log Euro sign decoding
+        if (char === '€') {
+          console.log(`[Font Handler] Decoded Euro from byte ${byte} in font ${font.name}`);
+        }
       } else {
         // Fallback to direct character code
         text += String.fromCharCode(byte);
@@ -373,11 +392,11 @@ export function encodeText(
             console.log(
               `Character "${char}" found in alternative font ${otherFontName} with code ${code}`
             );
-            break;
+            continue;
           }
         }
         if (!code) {
-          return null;
+          continue;
         }
       }
       bytes.push(code);
@@ -385,4 +404,88 @@ export function encodeText(
   }
 
   return new Uint8Array(bytes);
+}
+
+/**
+ * Encode text with automatic fallback to fonts in same family
+ * Returns EncodedText with multiple segments if font switching needed
+ */
+export function encodeTextWithFallback(
+  text: string,
+  primaryFont: FontInfo,
+  fontRegistry: FontRegistry
+): EncodedText {
+  const segments: EncodedSegment[] = [];
+  let currentFont = primaryFont;
+  let currentBytes: number[] = [];
+
+  console.log(
+    `[Font Handler] Encoding text "${text}" with fallback support, primary font: ${primaryFont.name} (${primaryFont.encoding})`
+  );
+
+  // Process each character, checking encoding per-font (not just once)
+  for (const char of text) {
+    let code = currentFont.reverseMap.get(char);
+
+    if (code === undefined) {
+      // Character not in current font - find fallback
+      console.log(
+        `[Font Handler] Character "${char}" not in font ${currentFont.name}, searching for fallback`
+      );
+      const fallbackFont = fontRegistry.findFallbackFont(char, currentFont);
+
+      if (!fallbackFont) {
+        console.warn(
+          `[Font Handler] No fallback font found for character "${char}" in family ${currentFont.baseFont}`
+        );
+        // Skip if no fallback found
+        continue;
+      }
+
+      console.log(
+        `[Font Handler] Found fallback font ${fallbackFont.name} (${fallbackFont.encoding}) for character "${char}"`
+      );
+
+      // Save current segment before switching fonts
+      if (currentBytes.length > 0) {
+        segments.push({
+          bytes: new Uint8Array(currentBytes),
+          font: currentFont
+        });
+        currentBytes = [];
+      }
+
+      // Switch to fallback font
+      currentFont = fallbackFont;
+      code = currentFont.reverseMap.get(char)!;
+    }
+
+    // CRITICAL: Check encoding of CURRENT font, not primary font
+    if (currentFont.encoding === 'Identity-H') {
+      // UTF-16 BE encoding (2 bytes per character)
+      currentBytes.push((code >> 8) & 0xff);
+      currentBytes.push(code & 0xff);
+      console.log(
+        `[Font Handler] Encoded "${char}" with Identity-H font ${currentFont.name}: [${(code >> 8) & 0xff}, ${code & 0xff}]`
+      );
+    } else {
+      // Single-byte encoding
+      currentBytes.push(code);
+      console.log(
+        `[Font Handler] Encoded "${char}" with single-byte font ${currentFont.name}: [${code}]`
+      );
+    }
+  }
+
+  // Save final segment
+  if (currentBytes.length > 0) {
+    segments.push({
+      bytes: new Uint8Array(currentBytes),
+      font: currentFont
+    });
+  }
+
+  console.log(`[Font Handler] Successfully encoded text into ${segments.length} segment(s)`);
+
+  return { segments, success: true };
 }
