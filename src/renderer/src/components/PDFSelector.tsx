@@ -30,7 +30,7 @@ export default function PDFSelector() {
     <Box>
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
         <Button variant="outlined" startIcon={<PictureAsPdf />} onClick={handleSelectPDF}>
-          {t('pdf.selectButton')}
+          {pdfPath ? t('pdf.changeButton') : t('pdf.selectButton')}
         </Button>
 
         {pdfPath && (

@@ -36,10 +36,12 @@ function App() {
     if (!spreadsheetData) return 0;
 
     // Check if all selected sheets have complete mappings
-    const allMappingsComplete = spreadsheetData.selectedSheets.every(
-      (sheetName) =>
-        sheetMappings[sheetName]?.sourceColumn && sheetMappings[sheetName]?.targetColumn
-    );
+    const allMappingsComplete =
+      Object.keys(sheetMappings).length > 0 &&
+      spreadsheetData.selectedSheets.every(
+        (sheetName) =>
+          sheetMappings[sheetName]?.sourceColumn && sheetMappings[sheetName]?.targetColumn
+      );
     if (!allMappingsComplete) return 1;
 
     if (!pdfPath) return 2;
@@ -48,14 +50,28 @@ function App() {
 
   const activeStep = getActiveStep();
 
-  const steps = [t('steps.selectSpreadsheet'), t('steps.selectPDF'), t('steps.process')];
+  const steps = [
+    t('steps.selectSpreadsheet'),
+    t('steps.setupMappings'),
+    t('steps.selectPDF'),
+    t('steps.process')
+  ];
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Box sx={{ mb: 4 }}>
-          <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
+      <Container maxWidth="lg" sx={{ py: 2 }}>
+        <Box
+          sx={{
+            mb: 2,
+            py: 2,
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            bgcolor: 'background.paper'
+          }}
+        >
+          <Stepper activeStep={activeStep}>
             {steps.map((label, index) => (
               <Step key={label} completed={activeStep > index}>
                 <StepLabel>{label}</StepLabel>
@@ -66,7 +82,7 @@ function App() {
 
         <Paper elevation={3} sx={{ p: 2, mb: 3 }}>
           <Typography variant="body1" gutterBottom>
-            {t('steps.selectSpreadsheet')}
+            {t('steps.selectSpreadsheet')} & {t('steps.setupMappings')}
           </Typography>
           <Divider sx={{ mb: 2 }} />
           <SpreadsheetSelector />

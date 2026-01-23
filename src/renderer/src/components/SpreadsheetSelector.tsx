@@ -85,7 +85,7 @@ export default function SpreadsheetSelector() {
           onClick={handleSelectSpreadsheet}
           disabled={loading}
         >
-          {t('spreadsheet.selectButton')}
+          {spreadsheetData ? t('spreadsheet.changeButton') : t('spreadsheet.selectButton')}
         </Button>
 
         {spreadsheetData && (
@@ -127,9 +127,10 @@ export default function SpreadsheetSelector() {
                   )}
 
                   {spreadsheetData.selectedSheets.includes(sheet) ? (
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                    <Box sx={{ ml: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
                       <Autocomplete
                         disablePortal
+                        size="small"
                         options={columns}
                         sx={{ flex: 1 }}
                         renderInput={(params) => (
@@ -147,6 +148,7 @@ export default function SpreadsheetSelector() {
                         disablePortal
                         options={columns}
                         sx={{ flex: 1 }}
+                        size="small"
                         renderInput={(params) => (
                           <TextField {...params} label={t('mapping.targetColumn')} />
                         )}

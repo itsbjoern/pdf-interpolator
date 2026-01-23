@@ -1,11 +1,13 @@
 {
   "steps": {
-    "selectSpreadsheet": "1. Select Spreadsheet & Set Up Mappings",
-    "selectPDF": "2. Select PDF",
-    "process": "3. Process"
+    "selectSpreadsheet": "Select Spreadsheet",
+    "setupMappings": "Set Up Mappings",
+    "selectPDF": "Select PDF",
+    "process": "Process"
   },
   "spreadsheet": {
     "selectButton": "Select Spreadsheet",
+    "changeButton": "Change Spreadsheet",
     "selectedFile": "Selected file: {{fileName}}",
     "selectSheet": "Select Sheet",
     "selectSheets": "Select Sheets ({{selected}} of {{total}} selected)",
@@ -21,11 +23,13 @@
   },
   "pdf": {
     "selectButton": "Select PDF",
+    "changeButton": "Change PDF",
     "selectedFile": "Selected PDF: {{fileName}}",
     "pageCount": "Pages: {{count}}"
   },
   "process": {
     "selectOutput": "Select Output Location",
+    "changeOutput": "Change Output Location",
     "outputPath": "Output: {{path}}",
     "startButton": "Process PDF",
     "processing": "Processing...",

@@ -112,7 +112,7 @@ export default function ProcessButton() {
           onClick={handleSelectOutput}
           disabled={isProcessing}
         >
-          {t('process.selectOutput')}
+          {outputPath ? t('process.changeOutput') : t('process.selectOutput')}
         </Button>
 
         {outputPath && (

@@ -1,11 +1,13 @@
 {
   "steps": {
-    "selectSpreadsheet": "1. Tabelle auswählen & Zuordnungen einrichten",
-    "selectPDF": "2. PDF auswählen",
-    "process": "3. Verarbeiten"
+    "selectSpreadsheet": "Tabelle auswählen",
+    "setupMappings": "Zuordnungen einrichten",
+    "selectPDF": "PDF auswählen",
+    "process": "Verarbeiten"
   },
   "spreadsheet": {
     "selectButton": "Tabelle auswählen",
+    "changeButton": "Tabelle ändern",
     "selectedFile": "Ausgewählte Datei: {{fileName}}",
     "selectSheet": "Blatt auswählen",
     "selectSheets": "Blätter auswählen ({{selected}} von {{total}} ausgewählt)",
@@ -17,15 +19,17 @@
     "removeMapping": "Entfernen",
     "sourceColumn": "Quellspalte (suchen)",
     "targetColumn": "Zielspalte (ersetzen durch)",
-    "selectColumn": "Wählen Sie eine Spalte"
+    "selectColumn": "Spalte auswählen"
   },
   "pdf": {
     "selectButton": "PDF auswählen",
+    "changeButton": "PDF ändern",
     "selectedFile": "Ausgewähltes PDF: {{fileName}}",
     "pageCount": "Seiten: {{count}}"
   },
   "process": {
     "selectOutput": "Ausgabespeicherort auswählen",
+    "changeOutput": "Ausgabespeicherort ändern",
     "outputPath": "Ausgabe: {{path}}",
     "startButton": "PDF verarbeiten",
     "processing": "Verarbeitung läuft...",
