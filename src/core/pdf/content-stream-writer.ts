@@ -1,14 +1,23 @@
 // Content stream serialization
 
-import { PDFOperation, PDFValue } from './types';
+import { PDFValue, ParsedContentStream } from './types';
 
 /**
- * Rebuild content stream from modified operations
+ * Rebuild content stream from parsed data
+ * Rebuilds entire stream from all operations (preserves graphics)
  */
-export function rebuildContentStream(operations: PDFOperation[]): Uint8Array {
+export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
+  const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
+
+  if (modifiedBlocks.length === 0) {
+    return parsed.originalBytes;
+  }
+
+  // Rebuild entire stream from all operations
+  // This preserves graphics but doesn't try to do byte-level patching
   const parts: string[] = [];
 
-  for (const operation of operations) {
+  for (const operation of parsed.allOperations) {
     // Serialize operands
     for (const operand of operation.operands) {
       const serialized = serializeValue(operand);
@@ -23,9 +32,9 @@ export function rebuildContentStream(operations: PDFOperation[]): Uint8Array {
     parts.push('\n');
   }
 
-  const content = parts.join('');
-  return new TextEncoder().encode(content);
+  return new TextEncoder().encode(parts.join(''));
 }
+
 
 /**
  * Serialize a PDF value to string
@@ -74,13 +83,13 @@ function bytesToStringLiteral(bytes: Uint8Array): string {
     } else if (byte === 0x29) {
       // )
       result += '\\)';
-    } else if (byte === 0x5C) {
+    } else if (byte === 0x5c) {
       // \
       result += '\\\\';
-    } else if (byte === 0x0A) {
+    } else if (byte === 0x0a) {
       // \n
       result += '\\n';
-    } else if (byte === 0x0D) {
+    } else if (byte === 0x0d) {
       // \r
       result += '\\r';
     } else if (byte === 0x09) {
@@ -89,7 +98,7 @@ function bytesToStringLiteral(bytes: Uint8Array): string {
     } else if (byte === 0x08) {
       // \b
       result += '\\b';
-    } else if (byte === 0x0C) {
+    } else if (byte === 0x0c) {
       // \f
       result += '\\f';
     } else if (byte >= 32 && byte <= 126) {

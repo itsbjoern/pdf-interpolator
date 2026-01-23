@@ -1,32 +1,58 @@
 // Content stream parser for PDF operations
 
-import { PDFOperation, PDFValue } from './types';
+import { PDFOperation, PDFValue, ParsedContentStream, TextBlock } from './types';
 import { ContentStreamParseError } from './error-handler';
 
 /**
- * Parse a PDF content stream into structured operations
+ * Parse a PDF content stream with position tracking for surgical editing
+ * This is the NEW approach that preserves ALL operations and tracks BT/ET blocks
  */
-export function parseContentStream(streamBytes: Uint8Array, pageIndex?: number): PDFOperation[] {
+export function parseContentStreamWithPositions(
+  streamBytes: Uint8Array,
+  pageIndex?: number
+): ParsedContentStream {
   try {
     const content = new TextDecoder('latin1').decode(streamBytes);
-    console.log(`[Content Parser] Parsing content stream (${streamBytes.length} bytes, ${content.length} chars)`);
     const tokens = tokenize(content);
-    console.log(`[Content Parser] Tokenized into ${tokens.length} tokens`);
     const allOperations = parseTokens(tokens);
-    console.log(`[Content Parser] Parsed into ${allOperations.length} operations`);
 
-    // Filter to only include operations within text blocks (BT...ET)
-    const textBlockOperations = filterTextBlockOperations(allOperations);
-    console.log(`[Content Parser] Found ${textBlockOperations.length} operations within text blocks`);
+    // Identify BT/ET blocks and track their positions
+    const textBlocks: TextBlock[] = [];
+    let currentBlock: Partial<TextBlock> | null = null;
 
-    // Log operator types
-    const operatorCounts = new Map<string, number>();
-    for (const op of textBlockOperations) {
-      operatorCounts.set(op.operator, (operatorCounts.get(op.operator) || 0) + 1);
+    for (let i = 0; i < allOperations.length; i++) {
+      const op = allOperations[i];
+
+      if (op.operator === 'BT') {
+        // Begin text block
+        currentBlock = {
+          btIndex: i,
+          startBytePos: op.startIndex,
+          operations: [op],
+          fonts: new Map(),
+          textElements: [],
+          modified: false
+        };
+      } else if (op.operator === 'ET' && currentBlock) {
+        // End text block
+        currentBlock.etIndex = i;
+        currentBlock.endBytePos = op.endIndex;
+        currentBlock.operations!.push(op);
+        textBlocks.push(currentBlock as TextBlock);
+        currentBlock = null;
+      } else if (currentBlock) {
+        // Inside text block, add to current block
+        currentBlock.operations!.push(op);
+      }
     }
-    console.log('[Content Parser] Text block operator breakdown:', Object.fromEntries(operatorCounts));
 
-    return textBlockOperations;
+    console.log(`[Content Parser] Found ${textBlocks.length} BT/ET text blocks`);
+
+    return {
+      originalBytes: streamBytes,
+      allOperations,
+      textBlocks
+    };
   } catch (error) {
     if (error instanceof Error) {
       throw new ContentStreamParseError(error.message, pageIndex);
@@ -36,35 +62,19 @@ export function parseContentStream(streamBytes: Uint8Array, pageIndex?: number):
 }
 
 /**
- * Filter operations to only include those within text blocks (BT...ET)
+ * Token with position information
  */
-function filterTextBlockOperations(operations: PDFOperation[]): PDFOperation[] {
-  const textBlockOps: PDFOperation[] = [];
-  let inTextBlock = false;
-
-  for (const op of operations) {
-    if (op.operator === 'BT') {
-      // Begin text block
-      inTextBlock = true;
-      textBlockOps.push(op);
-    } else if (op.operator === 'ET') {
-      // End text block
-      textBlockOps.push(op);
-      inTextBlock = false;
-    } else if (inTextBlock) {
-      // Inside text block, include operation
-      textBlockOps.push(op);
-    }
-  }
-
-  return textBlockOps;
+interface TokenWithPos {
+  token: string;
+  startPos: number;
+  endPos: number;
 }
 
 /**
- * Tokenize content stream into tokens
+ * Tokenize content stream into tokens with byte positions
  */
-function tokenize(content: string): string[] {
-  const tokens: string[] = [];
+function tokenize(content: string): TokenWithPos[] {
+  const tokens: TokenWithPos[] = [];
   let i = 0;
 
   while (i < content.length) {
@@ -75,6 +85,8 @@ function tokenize(content: string): string[] {
       i++;
       continue;
     }
+
+    const startPos = i;
 
     // String literal: (text)
     if (char === '(') {
@@ -98,7 +110,7 @@ function tokenize(content: string): string[] {
         i++;
       }
 
-      tokens.push(str);
+      tokens.push({ token: str, startPos, endPos: i });
       continue;
     }
 
@@ -117,32 +129,32 @@ function tokenize(content: string): string[] {
         i++;
       }
 
-      tokens.push(str);
+      tokens.push({ token: str, startPos, endPos: i });
       continue;
     }
 
     // Array: [elements]
     if (char === '[') {
-      tokens.push('[');
+      tokens.push({ token: '[', startPos, endPos: i + 1 });
       i++;
       continue;
     }
 
     if (char === ']') {
-      tokens.push(']');
+      tokens.push({ token: ']', startPos, endPos: i + 1 });
       i++;
       continue;
     }
 
     // Dictionary: <<key value>>
     if (char === '<' && i + 1 < content.length && content[i + 1] === '<') {
-      tokens.push('<<');
+      tokens.push({ token: '<<', startPos, endPos: i + 2 });
       i += 2;
       continue;
     }
 
     if (char === '>' && i + 1 < content.length && content[i + 1] === '>') {
-      tokens.push('>>');
+      tokens.push({ token: '>>', startPos, endPos: i + 2 });
       i += 2;
       continue;
     }
@@ -155,7 +167,7 @@ function tokenize(content: string): string[] {
     }
 
     if (token) {
-      tokens.push(token);
+      tokens.push({ token, startPos, endPos: i });
     }
   }
 
@@ -163,29 +175,33 @@ function tokenize(content: string): string[] {
 }
 
 /**
- * Parse tokens into operations
+ * Parse tokens into operations with accurate byte positions
  */
-function parseTokens(tokens: string[]): PDFOperation[] {
+function parseTokens(tokens: TokenWithPos[]): PDFOperation[] {
   const operations: PDFOperation[] = [];
   const stack: PDFValue[] = [];
-  let position = 0;
+  let operandStartPos: number | null = null; // Track where operands for current operation start
 
   for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    const startIndex = position;
-    position += token.length + 1; // +1 for space
+    const { token, startPos, endPos } = tokens[i];
 
     // Array
     if (token === '[') {
       const array: PDFValue[] = [];
+      const arrayStartPos = startPos;
       i++;
 
-      while (i < tokens.length && tokens[i] !== ']') {
-        const value = parseValue(tokens[i]);
+      while (i < tokens.length && tokens[i].token !== ']') {
+        const value = parseValue(tokens[i].token);
         if (value !== null) {
           array.push(value);
         }
         i++;
+      }
+
+      // Track start of operands if this is the first operand
+      if (operandStartPos === null) {
+        operandStartPos = arrayStartPos;
       }
 
       stack.push(array);
@@ -200,17 +216,36 @@ function parseTokens(tokens: string[]): PDFOperation[] {
     // Check if token is an operator (contains only letters)
     if (/^[a-zA-Z'"*]+$/.test(token)) {
       // This is an operator
+      // Determine the start of this operation
+      let opStartIndex: number;
+      if (operandStartPos !== null) {
+        // We have operands, start from the first operand
+        opStartIndex = operandStartPos;
+      } else if (operations.length > 0) {
+        // No operands, start from end of previous operation
+        opStartIndex = operations[operations.length - 1].endIndex;
+      } else {
+        // No operands and first operation, start from operator position
+        opStartIndex = startPos;
+      }
+
       const operation: PDFOperation = {
         operator: token,
         operands: [...stack],
-        startIndex,
-        endIndex: position
+        startIndex: opStartIndex,
+        endIndex: endPos
       };
 
       operations.push(operation);
       stack.length = 0; // Clear stack
+      operandStartPos = null; // Reset for next operation
     } else {
       // This is an operand
+      // Track start of operands if this is the first operand
+      if (operandStartPos === null) {
+        operandStartPos = startPos;
+      }
+
       const value = parseValue(token);
       if (value !== null) {
         stack.push(value);
@@ -265,10 +300,10 @@ function stringLiteralToBytes(literal: string): Uint8Array {
       const escaped = content[i];
       switch (escaped) {
         case 'n':
-          bytes.push(0x0A);
+          bytes.push(0x0a);
           break;
         case 'r':
-          bytes.push(0x0D);
+          bytes.push(0x0d);
           break;
         case 't':
           bytes.push(0x09);
@@ -277,7 +312,7 @@ function stringLiteralToBytes(literal: string): Uint8Array {
           bytes.push(0x08);
           break;
         case 'f':
-          bytes.push(0x0C);
+          bytes.push(0x0c);
           break;
         case '(':
         case ')':

@@ -1,282 +1,20 @@
 // Font handling and encoding/decoding
 
-import { PDFPage, PDFName, PDFDict as PDFLibDict, PDFStream } from 'pdf-lib';
+import {
+  PDFPage,
+  PDFName,
+  PDFDict as PDFLibDict,
+  PDFStream,
+  decodePDFRawStream,
+  PDFRawStream
+} from 'pdf-lib';
 import { FontInfo, FontEncoding } from './types';
-
-/**
- * WinAnsiEncoding table (Windows Code Page 1252)
- */
-const WIN_ANSI_ENCODING: Map<number, string> = new Map([
-  ...Array.from({ length: 128 }, (_, i) => [i, String.fromCharCode(i)] as [number, string]),
-  [128, '\u20AC'],
-  [130, '\u201A'],
-  [131, '\u0192'],
-  [132, '\u201E'],
-  [133, '\u2026'],
-  [134, '\u2020'],
-  [135, '\u2021'],
-  [136, '\u02C6'],
-  [137, '\u2030'],
-  [138, '\u0160'],
-  [139, '\u2039'],
-  [140, '\u0152'],
-  [142, '\u017D'],
-  [145, '\u2018'],
-  [146, '\u2019'],
-  [147, '\u201C'],
-  [148, '\u201D'],
-  [149, '\u2022'],
-  [150, '\u2013'],
-  [151, '\u2014'],
-  [152, '\u02DC'],
-  [153, '\u2122'],
-  [154, '\u0161'],
-  [155, '\u203A'],
-  [156, '\u0153'],
-  [158, '\u017E'],
-  [159, '\u0178'],
-  ...Array.from(
-    { length: 96 },
-    (_, i) => [i + 160, String.fromCharCode(i + 160)] as [number, string]
-  )
-]);
-
-/**
- * MacRomanEncoding table
- */
-const MAC_ROMAN_ENCODING: Map<number, string> = new Map([
-  ...Array.from({ length: 128 }, (_, i) => [i, String.fromCharCode(i)] as [number, string]),
-  [128, '\u00C4'],
-  [129, '\u00C5'],
-  [130, '\u00C7'],
-  [131, '\u00C9'],
-  [132, '\u00D1'],
-  [133, '\u00D6'],
-  [134, '\u00DC'],
-  [135, '\u00E1'],
-  [136, '\u00E0'],
-  [137, '\u00E2'],
-  [138, '\u00E4'],
-  [139, '\u00E3'],
-  [140, '\u00E5'],
-  [141, '\u00E7'],
-  [142, '\u00E9'],
-  [143, '\u00E8'],
-  [144, '\u00EA'],
-  [145, '\u00EB'],
-  [146, '\u00ED'],
-  [147, '\u00EC'],
-  [148, '\u00EE'],
-  [149, '\u00EF'],
-  [150, '\u00F1'],
-  [151, '\u00F3'],
-  [152, '\u00F2'],
-  [153, '\u00F4'],
-  [154, '\u00F6'],
-  [155, '\u00F5'],
-  [156, '\u00FA'],
-  [157, '\u00F9'],
-  [158, '\u00FB'],
-  [159, '\u00FC'],
-  [160, '\u2020'],
-  [161, '\u00B0'],
-  [162, '\u00A2'],
-  [163, '\u00A3'],
-  [164, '\u00A7'],
-  [165, '\u2022'],
-  [166, '\u00B6'],
-  [167, '\u00DF'],
-  [168, '\u00AE'],
-  [169, '\u00A9'],
-  [170, '\u2122'],
-  [171, '\u00B4'],
-  [172, '\u00A8'],
-  [173, '\u2260'],
-  [174, '\u00C6'],
-  [175, '\u00D8'],
-  [176, '\u221E'],
-  [177, '\u00B1'],
-  [178, '\u2264'],
-  [179, '\u2265'],
-  [180, '\u00A5'],
-  [181, '\u00B5'],
-  [182, '\u2202'],
-  [183, '\u2211'],
-  [184, '\u220F'],
-  [185, '\u03C0'],
-  [186, '\u222B'],
-  [187, '\u00AA'],
-  [188, '\u00BA'],
-  [189, '\u03A9'],
-  [190, '\u00E6'],
-  [191, '\u00F8'],
-  [192, '\u00BF'],
-  [193, '\u00A1'],
-  [194, '\u00AC'],
-  [195, '\u221A'],
-  [196, '\u0192'],
-  [197, '\u2248'],
-  [198, '\u2206'],
-  [199, '\u00AB'],
-  [200, '\u00BB'],
-  [201, '\u2026'],
-  [202, '\u00A0'],
-  [203, '\u00C0'],
-  [204, '\u00C3'],
-  [205, '\u00D5'],
-  [206, '\u0152'],
-  [207, '\u0153'],
-  [208, '\u2013'],
-  [209, '\u2014'],
-  [210, '\u201C'],
-  [211, '\u201D'],
-  [212, '\u2018'],
-  [213, '\u2019'],
-  [214, '\u00F7'],
-  [215, '\u25CA'],
-  [216, '\u00FF'],
-  [217, '\u0178'],
-  [218, '\u2044'],
-  [219, '\u20AC'],
-  [220, '\u2039'],
-  [221, '\u203A'],
-  [222, '\uFB01'],
-  [223, '\uFB02'],
-  [224, '\u2021'],
-  [225, '\u00B7'],
-  [226, '\u201A'],
-  [227, '\u201E'],
-  [228, '\u2030'],
-  [229, '\u00C2'],
-  [230, '\u00CA'],
-  [231, '\u00C1'],
-  [232, '\u00CB'],
-  [233, '\u00C8'],
-  [234, '\u00CD'],
-  [235, '\u00CE'],
-  [236, '\u00CF'],
-  [237, '\u00CC'],
-  [238, '\u00D3'],
-  [239, '\u00D4'],
-  [240, '\uF8FF'],
-  [241, '\u00D2'],
-  [242, '\u00DA'],
-  [243, '\u00DB'],
-  [244, '\u00D9'],
-  [245, '\u0131'],
-  [246, '\u02C6'],
-  [247, '\u02DC'],
-  [248, '\u00AF'],
-  [249, '\u02D8'],
-  [250, '\u02D9'],
-  [251, '\u02DA'],
-  [252, '\u00B8'],
-  [253, '\u02DD'],
-  [254, '\u02DB'],
-  [255, '\u02C7']
-]);
-
-/**
- * StandardEncoding table
- */
-const STANDARD_ENCODING: Map<number, string> = new Map([
-  ...Array.from({ length: 32 }, (_, i) => [i, String.fromCharCode(i)] as [number, string]),
-  [32, ' '],
-  [33, '!'],
-  [34, '"'],
-  [35, '#'],
-  [36, '$'],
-  [37, '%'],
-  [38, '&'],
-  [39, "'"],
-  [40, '('],
-  [41, ')'],
-  [42, '*'],
-  [43, '+'],
-  [44, ','],
-  [45, '-'],
-  [46, '.'],
-  [47, '/'],
-  [48, '0'],
-  [49, '1'],
-  [50, '2'],
-  [51, '3'],
-  [52, '4'],
-  [53, '5'],
-  [54, '6'],
-  [55, '7'],
-  [56, '8'],
-  [57, '9'],
-  [58, ':'],
-  [59, ';'],
-  [60, '<'],
-  [61, '='],
-  [62, '>'],
-  [63, '?'],
-  [64, '@'],
-  [65, 'A'],
-  [66, 'B'],
-  [67, 'C'],
-  [68, 'D'],
-  [69, 'E'],
-  [70, 'F'],
-  [71, 'G'],
-  [72, 'H'],
-  [73, 'I'],
-  [74, 'J'],
-  [75, 'K'],
-  [76, 'L'],
-  [77, 'M'],
-  [78, 'N'],
-  [79, 'O'],
-  [80, 'P'],
-  [81, 'Q'],
-  [82, 'R'],
-  [83, 'S'],
-  [84, 'T'],
-  [85, 'U'],
-  [86, 'V'],
-  [87, 'W'],
-  [88, 'X'],
-  [89, 'Y'],
-  [90, 'Z'],
-  [91, '['],
-  [92, '\\'],
-  [93, ']'],
-  [94, '^'],
-  [95, '_'],
-  [96, '`'],
-  [97, 'a'],
-  [98, 'b'],
-  [99, 'c'],
-  [100, 'd'],
-  [101, 'e'],
-  [102, 'f'],
-  [103, 'g'],
-  [104, 'h'],
-  [105, 'i'],
-  [106, 'j'],
-  [107, 'k'],
-  [108, 'l'],
-  [109, 'm'],
-  [110, 'n'],
-  [111, 'o'],
-  [112, 'p'],
-  [113, 'q'],
-  [114, 'r'],
-  [115, 's'],
-  [116, 't'],
-  [117, 'u'],
-  [118, 'v'],
-  [119, 'w'],
-  [120, 'x'],
-  [121, 'y'],
-  [122, 'z'],
-  [123, '{'],
-  [124, '|'],
-  [125, '}'],
-  [126, '~']
-]);
+import {
+  COMMON_GLYPH_MAP,
+  MAC_ROMAN_ENCODING,
+  STANDARD_ENCODING,
+  WIN_ANSI_ENCODING
+} from './font-encodings';
 
 /**
  * Extract fonts from a PDF page
@@ -344,15 +82,53 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
     const baseFontObj = fontDict.lookup(PDFName.of('BaseFont'));
     const baseFont = baseFontObj?.toString().replace(/^\//, '') || 'Unknown';
 
+    console.log(`[Font Handler] Parsing font ${fontName}: BaseFont=${baseFont}`);
+
     // Get encoding
     const encodingObj = fontDict.lookup(PDFName.of('Encoding'));
     let encoding: FontEncoding = 'WinAnsiEncoding';
     let encodingMap: Map<number, string>;
 
+    console.log(`[Font Handler] Font ${fontName} Encoding object:`, encodingObj?.toString());
+
     if (encodingObj) {
       const encodingStr = encodingObj.toString();
 
-      if (encodingStr.includes('WinAnsiEncoding')) {
+      // Check if encoding is a dictionary (with Differences)
+      if (encodingObj instanceof PDFLibDict) {
+        console.log(
+          `[Font Handler] Font ${fontName} has encoding dictionary with potential Differences`
+        );
+
+        // Get base encoding
+        const baseEncodingObj = encodingObj.lookup(PDFName.of('BaseEncoding'));
+        const baseEncodingStr = baseEncodingObj?.toString() || '/WinAnsiEncoding';
+
+        console.log(`[Font Handler] BaseEncoding: ${baseEncodingStr}`);
+
+        // Start with base encoding
+        if (baseEncodingStr.includes('WinAnsiEncoding')) {
+          encoding = 'WinAnsiEncoding';
+          encodingMap = new Map(WIN_ANSI_ENCODING);
+        } else if (baseEncodingStr.includes('MacRomanEncoding')) {
+          encoding = 'MacRomanEncoding';
+          encodingMap = new Map(MAC_ROMAN_ENCODING);
+        } else if (baseEncodingStr.includes('StandardEncoding')) {
+          encoding = 'StandardEncoding';
+          encodingMap = new Map(STANDARD_ENCODING);
+        } else {
+          // Default to WinAnsi
+          encodingMap = new Map(WIN_ANSI_ENCODING);
+        }
+
+        // Apply Differences array if present
+        const differencesObj = encodingObj.lookup(PDFName.of('Differences'));
+        if (differencesObj) {
+          console.log(`[Font Handler] Font ${fontName} has Differences array`);
+          applyDifferences(encodingMap, differencesObj);
+          encoding = 'Custom';
+        }
+      } else if (encodingStr.includes('WinAnsiEncoding')) {
         encoding = 'WinAnsiEncoding';
         encodingMap = new Map(WIN_ANSI_ENCODING);
       } else if (encodingStr.includes('MacRomanEncoding')) {
@@ -376,12 +152,22 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
         }
       } else {
         // Unknown encoding, use WinAnsi as fallback
+        console.warn(`[Font Handler] Unknown encoding: ${encodingStr}, using WinAnsi fallback`);
         encoding = 'Custom';
         encodingMap = new Map(WIN_ANSI_ENCODING);
       }
     } else {
-      // No encoding specified, use WinAnsi
-      encodingMap = new Map(WIN_ANSI_ENCODING);
+      // No encoding specified, check for ToUnicode CMap first
+      const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
+      if (toUnicode && toUnicode instanceof PDFStream) {
+        console.log(`[Font Handler] No encoding specified, but ToUnicode CMap found`);
+        encoding = 'Custom';
+        encodingMap = await parseToUnicodeCMap(toUnicode);
+      } else {
+        // Use WinAnsi as default
+        console.log(`[Font Handler] No encoding or ToUnicode specified, defaulting to WinAnsi`);
+        encodingMap = new Map(WIN_ANSI_ENCODING);
+      }
     }
 
     // Build reverse map for encoding
@@ -406,6 +192,68 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
 }
 
 /**
+ * Apply Differences array to encoding map
+ * Differences format: [code1 /name1 /name2 ... code2 /name3 ...]
+ */
+function applyDifferences(encodingMap: Map<number, string>, differencesObj: unknown): void {
+  try {
+    // Get array elements
+    const differencesArray = (differencesObj as any).asArray?.() || [];
+    console.log(`[Font Handler] Processing ${differencesArray.length} differences entries`);
+
+    let currentCode: number | null = null;
+
+    for (const item of differencesArray) {
+      const itemStr = item.toString();
+
+      // Check if this is a number (new starting code)
+      if (/^\d+$/.test(itemStr)) {
+        currentCode = parseInt(itemStr, 10);
+      } else if (itemStr.startsWith('/') && currentCode !== null) {
+        // This is a glyph name
+        const glyphName = itemStr.slice(1); // Remove leading slash
+
+        // Map glyph name to Unicode character
+        const unicode = glyphNameToUnicode(glyphName);
+        if (unicode) {
+          encodingMap.set(currentCode, unicode);
+        }
+
+        currentCode++;
+      }
+    }
+  } catch (error) {
+    console.warn('[Font Handler] Error applying differences:', error);
+  }
+}
+
+/**
+ * Map Adobe glyph name to Unicode character
+ * This is a simplified mapping - a full implementation would use the Adobe Glyph List
+ */
+function glyphNameToUnicode(glyphName: string): string | null {
+  // Check direct mapping
+  if (COMMON_GLYPH_MAP[glyphName]) {
+    return COMMON_GLYPH_MAP[glyphName];
+  }
+
+  // Handle uniXXXX format (e.g., uni0041 = 'A')
+  if (glyphName.startsWith('uni') && glyphName.length === 7) {
+    const codePoint = parseInt(glyphName.slice(3), 16);
+    return String.fromCharCode(codePoint);
+  }
+
+  // Handle uXXXX format
+  if (glyphName.startsWith('u') && glyphName.length === 5) {
+    const codePoint = parseInt(glyphName.slice(1), 16);
+    return String.fromCharCode(codePoint);
+  }
+
+  console.warn(`[Font Handler] Unknown glyph name: ${glyphName}`);
+  return null;
+}
+
+/**
  * Parse ToUnicode CMap stream
  */
 async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, string>> {
@@ -413,7 +261,7 @@ async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, st
 
   try {
     // Get stream contents using pdf-lib API
-    const cmapBytes = (cmapStream as any).contents || new Uint8Array();
+    const cmapBytes = decodePDFRawStream(cmapStream as PDFRawStream).decode();
     const cmapText = new TextDecoder('latin1').decode(cmapBytes);
 
     // Parse beginbfchar and beginbfrange sections
@@ -496,7 +344,11 @@ export function decodeText(bytes: Uint8Array, font: FontInfo): string {
  * Encode text to bytes using font encoding
  * Returns null if text contains characters not in font
  */
-export function encodeText(text: string, font: FontInfo): Uint8Array | null {
+export function encodeText(
+  text: string,
+  font: FontInfo,
+  fontMap: Map<string, FontInfo>
+): Uint8Array | null {
   const bytes: number[] = [];
 
   if (font.encoding === 'Identity-H') {
@@ -509,11 +361,24 @@ export function encodeText(text: string, font: FontInfo): Uint8Array | null {
   } else {
     // Single-byte encoding
     for (const char of text) {
-      const code = font.reverseMap.get(char);
+      let code = font.reverseMap.get(char);
+      console.log(`Encoding character "${char}" in font ${font.name}: code=${code}`);
       if (code === undefined) {
         // Character not in font
         console.warn(`Character "${char}" not found in font ${font.name}`);
-        return null;
+
+        for (const [otherFontName, otherFont] of fontMap) {
+          const code = otherFont.reverseMap.get(char);
+          if (code !== undefined) {
+            console.log(
+              `Character "${char}" found in alternative font ${otherFontName} with code ${code}`
+            );
+            break;
+          }
+        }
+        if (!code) {
+          return null;
+        }
       }
       bytes.push(code);
     }

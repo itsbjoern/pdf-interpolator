@@ -1,8 +1,4 @@
 {
-  "app": {
-    "title": "PDF-Tabellen-Umschreiber",
-    "description": "Ersetzen Sie Text in PDF-Dokumenten mithilfe von Tabellendaten"
-  },
   "steps": {
     "selectSpreadsheet": "1. Tabelle auswählen & Zuordnungen einrichten",
     "selectPDF": "2. PDF auswählen",

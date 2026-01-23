@@ -1,35 +1,28 @@
 // Text extraction from PDF operations
 
-import { PDFOperation, TextElement, FontInfo } from './types';
+import { TextElement, FontInfo, TextBlock } from './types';
 import { decodeText } from './font-handler';
 
 /**
- * Extract text elements from parsed operations
+ * Extract text from a single TextBlock (NEW surgical approach)
+ * Processes only operations within this block and updates the block in-place
  */
-export function extractTextElements(
-  operations: PDFOperation[],
-  fontMap: Map<string, FontInfo>
-): TextElement[] {
+export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, FontInfo>): void {
   const textElements: TextElement[] = [];
+  const usedFonts = new Map<string, FontInfo>();
   let currentFont: FontInfo | null = null;
 
-  for (const operation of operations) {
+  for (const operation of block.operations) {
     const { operator, operands } = operation;
 
     // Tf: Set text font and size
     if (operator === 'Tf' && operands.length >= 2) {
       const fontName = operands[0] as string;
-      // Remove leading slash from font name
       const cleanFontName = fontName.startsWith('/') ? fontName.slice(1) : fontName;
       currentFont = fontMap.get(cleanFontName) || fontMap.get(fontName) || null;
 
-      if (!currentFont) {
-        console.warn(
-          `[Text Decoder] Font not found: ${fontName}. Available fonts:`,
-          Array.from(fontMap.keys())
-        );
-      } else {
-        console.log(`[Text Decoder] Set font: ${fontName} (encoding: ${currentFont.encoding})`);
+      if (currentFont) {
+        usedFonts.set(cleanFontName, currentFont);
       }
       continue;
     }
@@ -42,7 +35,6 @@ export function extractTextElements(
       const textBytes = operands[0];
       if (textBytes instanceof Uint8Array) {
         const text = decodeText(textBytes, currentFont);
-        console.log(`[Text Decoder] Tj operator decoded: "${text}"`);
         textElements.push({
           text,
           operation,
@@ -61,14 +53,11 @@ export function extractTextElements(
         for (let i = 0; i < array.length; i++) {
           const item = array[i];
           if (item instanceof Uint8Array) {
-            const text = decodeText(item, currentFont);
-            combinedText += text;
+            combinedText += decodeText(item, currentFont);
           }
-          // Numbers in TJ arrays are character spacing adjustments, skip them
         }
 
         if (combinedText) {
-          console.log(`[Text Decoder] TJ operator decoded: "${combinedText}"`);
           textElements.push({
             text: combinedText,
             operation,
@@ -108,16 +97,7 @@ export function extractTextElements(
     }
   }
 
-  return textElements;
-}
-
-/**
- * Extract all text from a page (for debugging/logging)
- */
-export function extractPageText(
-  operations: PDFOperation[],
-  fontMap: Map<string, FontInfo>
-): string {
-  const textElements = extractTextElements(operations, fontMap);
-  return textElements.map((el) => el.text).join(' ');
+  // Update block with extracted text
+  block.textElements = textElements;
+  block.fonts = usedFonts;
 }

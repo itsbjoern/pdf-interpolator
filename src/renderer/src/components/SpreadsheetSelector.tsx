@@ -10,7 +10,9 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  Autocomplete,
+  TextField
 } from '@mui/material';
 import { ArrowForward, FolderOpen } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
@@ -64,13 +66,6 @@ export default function SpreadsheetSelector() {
         ? [...spreadsheetData.selectedSheets, sheetName]
         : spreadsheetData.selectedSheets.filter((s) => s !== sheetName);
 
-      // Don't allow deselecting all sheets
-      if (newSelectedSheets.length === 0) {
-        setError('At least one sheet must be selected');
-        setLoading(false);
-        return;
-      }
-
       // Re-read spreadsheet with new selection
       const data = await window.electron.readSpreadsheet(spreadsheetPath, newSelectedSheets);
       setSpreadsheetData(data);
@@ -102,12 +97,15 @@ export default function SpreadsheetSelector() {
 
       {spreadsheetData && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            {t('spreadsheet.selectSheets', {
-              selected: spreadsheetData.selectedSheets.length,
-              total: spreadsheetData.sheets.length
-            })}
-          </Typography>
+          {spreadsheetData.sheets.length === 1 ? null : (
+            <Typography variant="subtitle2" gutterBottom>
+              {t('spreadsheet.selectSheets', {
+                selected: spreadsheetData.selectedSheets.length,
+                total: spreadsheetData.sheets.length
+              })}
+            </Typography>
+          )}
+
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
             {spreadsheetData.sheets.map((sheet) => {
               const mapping = sheetMappings[sheet];
@@ -115,60 +113,48 @@ export default function SpreadsheetSelector() {
 
               return (
                 <Box key={sheet}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={spreadsheetData.selectedSheets.includes(sheet)}
-                        onChange={(e) => handleSheetToggle(sheet, e.target.checked)}
-                        disabled={loading}
-                      />
-                    }
-                    label={sheet}
-                  />
+                  {spreadsheetData.sheets.length === 1 ? null : (
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={spreadsheetData.selectedSheets.includes(sheet)}
+                          onChange={(e) => handleSheetToggle(sheet, e.target.checked)}
+                          disabled={loading}
+                        />
+                      }
+                      label={sheet}
+                    />
+                  )}
 
                   {spreadsheetData.selectedSheets.includes(sheet) ? (
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                      <FormControl sx={{ flex: 1 }}>
-                        <InputLabel>{t('mapping.sourceColumn')}</InputLabel>
-                        <Select
-                          value={mapping.sourceColumn}
-                          label={t('mapping.sourceColumn')}
-                          onChange={(e) =>
-                            updateSheetMapping(sheet, { sourceColumn: e.target.value })
-                          }
-                        >
-                          <MenuItem value="">
-                            <em>{t('mapping.selectColumn')}</em>
-                          </MenuItem>
-                          {columns.map((col) => (
-                            <MenuItem key={col} value={col}>
-                              {col}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
+                      <Autocomplete
+                        disablePortal
+                        options={columns}
+                        sx={{ flex: 1 }}
+                        renderInput={(params) => (
+                          <TextField {...params} label={t('mapping.sourceColumn')} />
+                        )}
+                        value={mapping.sourceColumn || null}
+                        onChange={(_, value) =>
+                          updateSheetMapping(sheet, { sourceColumn: value || '' })
+                        }
+                      />
 
                       <ArrowForward color="action" />
 
-                      <FormControl sx={{ flex: 1 }}>
-                        <InputLabel>{t('mapping.targetColumn')}</InputLabel>
-                        <Select
-                          value={mapping.targetColumn}
-                          label={t('mapping.targetColumn')}
-                          onChange={(e) =>
-                            updateSheetMapping(sheet, { targetColumn: e.target.value })
-                          }
-                        >
-                          <MenuItem value="">
-                            <em>{t('mapping.selectColumn')}</em>
-                          </MenuItem>
-                          {columns.map((col) => (
-                            <MenuItem key={col} value={col}>
-                              {col}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
+                      <Autocomplete
+                        disablePortal
+                        options={columns}
+                        sx={{ flex: 1 }}
+                        renderInput={(params) => (
+                          <TextField {...params} label={t('mapping.targetColumn')} />
+                        )}
+                        value={mapping.targetColumn || null}
+                        onChange={(_, value) =>
+                          updateSheetMapping(sheet, { targetColumn: value || '' })
+                        }
+                      />
                     </Box>
                   ) : null}
                 </Box>

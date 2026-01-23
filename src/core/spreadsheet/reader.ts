@@ -14,12 +14,12 @@ export function readSpreadsheet(filePath: string, selectedSheets?: string[]): Sp
       throw new Error('No sheets found in spreadsheet');
     }
 
-    // Default to all sheets if none specified
-    const sheetsToRead = selectedSheets && selectedSheets.length > 0 ? selectedSheets : sheets;
+    // Determine which sheets to read
+    const sheetsToRead = sheets.length === 1 ? sheets : selectedSheets || [];
 
     // Combine data from all selected sheets
     const allColumns: Record<string, string[]> = {};
-    const combinedData: Record<string, string[]> = {};
+    const combinedData: Record<string, Record<string, string[]>> = {};
 
     sheetsToRead.forEach((sheetName) => {
       if (!sheets.includes(sheetName)) {
@@ -27,7 +27,10 @@ export function readSpreadsheet(filePath: string, selectedSheets?: string[]): Sp
       }
 
       const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        raw: false
+      }) as unknown[][];
 
       if (jsonData.length === 0) {
         return; // Skip empty sheets
@@ -37,20 +40,26 @@ export function readSpreadsheet(filePath: string, selectedSheets?: string[]): Sp
       const headers = (jsonData[0] as string[]).filter((h) => h !== undefined && h !== '');
 
       const columns = new Set<string>();
+      const data: Record<string, string[]> = {};
 
       headers.forEach((header, colIndex) => {
         // Add sheet name prefix if column exists in multiple sheets
-        const columnKey = columns.has(header) ? `${header} (${sheetName})` : header;
         columns.add(header);
 
-        combinedData[columnKey] = [];
+        data[header] = [];
         for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
           const row = jsonData[rowIndex] as unknown[];
           const value = row[colIndex];
-          combinedData[columnKey].push(value !== undefined && value !== null ? String(value) : '');
+          if (value === undefined || value === null) {
+            data[header].push('');
+          } else {
+            const asNumber = Number(value);
+            data[header].push(isNaN(asNumber) ? String(value) : String(Math.round(asNumber)));
+          }
         }
       });
       allColumns[sheetName] = Array.from(columns);
+      combinedData[sheetName] = data;
     });
 
     return {

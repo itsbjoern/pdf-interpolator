@@ -55,13 +55,6 @@ function App() {
       <CssBaseline />
       <Container maxWidth="lg" sx={{ py: 4 }}>
         <Box sx={{ mb: 4 }}>
-          <Typography variant="h3" component="h1" gutterBottom align="center">
-            {t('app.title')}
-          </Typography>
-          <Typography variant="body1" align="center" color="text.secondary" sx={{ mb: 4 }}>
-            {t('app.description')}
-          </Typography>
-
           <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
             {steps.map((label, index) => (
               <Step key={label} completed={activeStep > index}>

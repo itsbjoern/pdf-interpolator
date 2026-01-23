@@ -5,7 +5,7 @@ export interface SpreadsheetData {
   sheets: string[];
   selectedSheets: string[];
   columns: Record<string, string[]>;
-  data: Record<string, string[]>;
+  data: Record<string, Record<string, string[]>>;
 }
 
 export interface SheetMapping {
