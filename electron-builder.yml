@@ -35,12 +35,17 @@ dmg:
 linux:
   target:
     - AppImage
+    - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: "bjoernf.com"
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+snap:
+  publish:
+    - provider: "generic"
+      url: "https://null/"
 publish:
   provider: github
   owner: itsbjoern
