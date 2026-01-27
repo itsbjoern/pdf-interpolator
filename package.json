@@ -71,8 +71,7 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
+      "out/**/*"
     ],
     "mac": {
       "target": [

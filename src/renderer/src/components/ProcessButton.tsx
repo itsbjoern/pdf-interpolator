@@ -1,8 +1,10 @@
-import { Box, Button, Typography, Alert, LinearProgress, Paper } from '@mui/material';
+import { Box, Button, Typography, LinearProgress, Paper } from '@mui/material';
 import { PlayArrow, Save } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { useState, useEffect } from 'react';
+import type { ProcessResult } from '@shared/types';
+import ResultsDialog from './ResultsDialog';
 
 export default function ProcessButton() {
   const { t } = useTranslation();
@@ -20,8 +22,8 @@ export default function ProcessButton() {
     setProgress
   } = useAppStore();
 
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [result, setResult] = useState<ProcessResult | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Set up progress listener
   useEffect(() => {
@@ -43,60 +45,81 @@ export default function ProcessButton() {
 
   const handleSelectOutput = async () => {
     try {
-      setError(null);
       const filePath = await window.electron.selectOutput();
       if (filePath) {
         setOutputPath(filePath);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      // Show error in dialog
+      setResult({
+        success: false,
+        error: err instanceof Error ? err.message : String(err)
+      });
+      setDialogOpen(true);
     }
   };
 
   const handleProcess = async () => {
     if (!isReadyToProcess || !spreadsheetPath || !pdfPath || !outputPath) {
-      setError(t('errors.processingFailed'));
+      setResult({
+        success: false,
+        error: t('errors.processingFailed')
+      });
+      setDialogOpen(true);
       return;
     }
 
     try {
       setProcessing(true);
-      setError(null);
-      setSuccess(false);
+      setResult(null);
       setProgress(0, t('process.processing'));
 
       // Convert sheetMappings to array
       const mappingsArray = Object.values(sheetMappings);
 
       // Call actual PDF processing
-      const result = await window.electron.processPDF(
+      const processResult = await window.electron.processPDF(
         pdfPath,
         spreadsheetPath,
         mappingsArray,
         outputPath
       );
 
-      if (result.success) {
-        setSuccess(true);
-        setProgress(100, t('process.success'));
+      // Store result and open dialog
+      setResult(processResult);
+      setDialogOpen(true);
 
-        // Show statistics if available
-        if (result.stats && result.stats.length > 0) {
-          const totalReplacements = result.stats.reduce(
-            (sum, stat) => sum + stat.replacementCount,
-            0
+      // Update progress message
+      if (processResult.success) {
+        const failedCount =
+          (processResult.totalMatches || 0) - (processResult.totalReplacements || 0);
+        if (failedCount > 0) {
+          setProgress(
+            100,
+            t('process.partialSuccess', {
+              successful: processResult.totalReplacements,
+              failed: failedCount
+            })
           );
-          setProgress(100, `${t('process.success')} ${totalReplacements} replacements made.`);
+        } else {
+          setProgress(100, t('process.success'));
         }
-      } else {
-        throw new Error(result.error || t('errors.processingFailed'));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const errorResult: ProcessResult = {
+        success: false,
+        error: err instanceof Error ? err.message : String(err)
+      };
+      setResult(errorResult);
+      setDialogOpen(true);
       setProgress(0, '');
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
   };
 
   const getFileName = (path: string) => {
@@ -142,18 +165,6 @@ export default function ProcessButton() {
         </Box>
       )}
 
-      {success && (
-        <Alert severity="success" sx={{ mt: 2 }}>
-          {t('process.success')}
-        </Alert>
-      )}
-
-      {error && (
-        <Alert severity="error" sx={{ mt: 2 }}>
-          {error}
-        </Alert>
-      )}
-
       {!isReadyToProcess && !isProcessing && (
         <Paper variant="outlined" sx={{ mt: 2, p: 2, bgcolor: 'grey.50' }}>
           <Typography variant="caption" color="text.secondary">
@@ -167,6 +178,9 @@ export default function ProcessButton() {
           </Typography>
         </Paper>
       )}
+
+      {/* Results Dialog */}
+      <ResultsDialog open={dialogOpen} onClose={handleCloseDialog} result={result} />
     </Box>
   );
 }

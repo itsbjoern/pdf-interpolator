@@ -35,8 +35,28 @@
     "processing": "Processing...",
     "progress": "Progress: {{percent}}%",
     "success": "PDF processed successfully!",
+    "partialSuccess": "{{successful}} replacements made ({{failed}} failed due to encoding issues)",
     "error": "Error: {{message}}",
     "stats": "Replacements made: {{count}}"
+  },
+  "results": {
+    "title": "Processing Results",
+    "error": "Processing Failed",
+    "successTitle": "Success!",
+    "successMessage": "All {{count}} matches were successfully replaced.",
+    "warningTitle": "Partial Success",
+    "partialSuccessMessage": "{{successful}} of {{total}} matches were successfully replaced. {{failed}} replacements failed due to encoding issues.",
+    "successfulReplacements": "Successful",
+    "failedReplacements": "FAILED",
+    "outputLocation": "Output Location",
+    "detailedStats": "Detailed Statistics",
+    "matches": "matches",
+    "replaced": "replaced",
+    "failed": "failed",
+    "warningsTitle": "Encoding Issues",
+    "warningsDescription": "The following matches could not be replaced because the replacement text contains characters that are not available in any font on that page:",
+    "page": "Page",
+    "close": "Done"
   },
   "errors": {
     "noMappings": "Please add at least one mapping",

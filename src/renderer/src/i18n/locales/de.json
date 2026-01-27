@@ -35,8 +35,28 @@
     "processing": "Verarbeitung läuft...",
     "progress": "Fortschritt: {{percent}}%",
     "success": "PDF erfolgreich verarbeitet!",
+    "partialSuccess": "{{successful}} Ersetzungen durchgeführt ({{failed}} fehlgeschlagen aufgrund von Kodierungsproblemen)",
     "error": "Fehler: {{message}}",
     "stats": "Vorgenommene Ersetzungen: {{count}}"
+  },
+  "results": {
+    "title": "Verarbeitungsergebnisse",
+    "error": "Verarbeitung fehlgeschlagen",
+    "successTitle": "Erfolg!",
+    "successMessage": "Alle {{count}} Übereinstimmungen wurden erfolgreich ersetzt.",
+    "warningTitle": "Teilerfolg",
+    "partialSuccessMessage": "{{successful}} von {{total}} Übereinstimmungen wurden erfolgreich ersetzt. {{failed}} Ersetzungen sind aufgrund von Kodierungsproblemen fehlgeschlagen.",
+    "successfulReplacements": "Erfolgreich",
+    "failedReplacements": "FEHLGESCHLAGEN",
+    "outputLocation": "Ausgabespeicherort",
+    "detailedStats": "Detaillierte Statistik",
+    "matches": "Treffer",
+    "replaced": "ersetzt",
+    "failed": "fehlgeschlagen",
+    "warningsTitle": "Kodierungsprobleme",
+    "warningsDescription": "Die folgenden Übereinstimmungen konnten nicht ersetzt werden, da der Ersetzungstext Zeichen enthält, die in keiner Schriftart auf dieser Seite verfügbar sind:",
+    "page": "Seite",
+    "close": "Fertig"
   },
   "errors": {
     "noMappings": "Bitte fügen Sie mindestens eine Zuordnung hinzu",

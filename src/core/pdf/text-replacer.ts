@@ -5,12 +5,21 @@ import type { FontRegistry } from './font-registry';
 import type { EncodedText, FontInfo, PDFOperation, ReplacementEntry, TextBlock } from './types';
 
 /**
+ * Character issue tracking
+ */
+export interface CharacterIssue {
+  character: string;
+  strings: Set<string>;
+}
+
+/**
  * Replacement statistics
  */
 export interface ReplacementResult {
   modified: boolean;
-  count: number;
-  warnings: string[];
+  count: number; // Successful replacements
+  matchCount: number; // Total matches attempted
+  characterIssues: Map<string, Set<string>>; // character -> set of strings
 }
 
 /**
@@ -94,7 +103,8 @@ export function performReplacementsOnBlock(
 ): ReplacementResult {
   let blockModified = false;
   let totalCount = 0;
-  const warnings: string[] = [];
+  let totalMatches = 0;
+  const characterIssues = new Map<string, Set<string>>();
 
   for (let i = 0; i < block.textElements.length; i++) {
     const element = block.textElements[i];
@@ -107,17 +117,27 @@ export function performReplacementsOnBlock(
         continue;
       }
 
+      // Count matches
+      const matches = element.text.match(new RegExp(escapeRegex(source), 'g')) || [];
+      const matchCount = matches.length;
+      totalMatches += matchCount;
+
       // Perform the replacement
       const newText = element.text.replace(new RegExp(escapeRegex(source), 'g'), target);
-      const count = (element.text.match(new RegExp(escapeRegex(source), 'g')) || []).length;
 
       const encodedText = encodeTextWithFallback(newText, element.font, fontRegistry);
       if (!encodedText.success) {
-        const warning = `Cannot encode "${newText}" - no suitable font found`;
-        if (!warnings.includes(warning)) {
-          warnings.push(warning);
+        // Track which characters caused issues
+        if (encodedText.missingCharacters && encodedText.missingCharacters.length > 0) {
+          for (const char of encodedText.missingCharacters) {
+            if (!characterIssues.has(char)) {
+              characterIssues.set(char, new Set());
+            }
+            characterIssues.get(char)!.add(newText);
+          }
         }
-        continue;
+        // Once there was a theoretical match but it failed due to encoding the whole text is marked as invalid. This prevents substring issues later on.
+        break;
       }
 
       // Check if we need multi-font replacement
@@ -155,7 +175,7 @@ export function performReplacementsOnBlock(
           block.operationReplacements.set(opIndex, newOperations);
           console.log(`[Text Replacer] Stored replacement for operation at index ${opIndex}`);
           blockModified = true;
-          totalCount += count;
+          totalCount += matchCount;
           element.text = newText;
         } else {
           console.warn(
@@ -174,7 +194,7 @@ export function performReplacementsOnBlock(
 
         if (success) {
           blockModified = true;
-          totalCount += count;
+          totalCount += matchCount;
           element.text = newText;
         }
       }
@@ -187,7 +207,8 @@ export function performReplacementsOnBlock(
   return {
     modified: blockModified,
     count: totalCount,
-    warnings
+    matchCount: totalMatches,
+    characterIssues
   };
 }
 

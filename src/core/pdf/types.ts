@@ -81,6 +81,7 @@ export interface EncodedSegment {
 export interface EncodedText {
   segments: EncodedSegment[];  // May have multiple segments if fonts switched
   success: boolean;            // Whether encoding succeeded
+  missingCharacters?: string[]; // Characters that couldn't be encoded
 }
 
 /**

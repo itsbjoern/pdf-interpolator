@@ -1,7 +1,7 @@
 // Main PDF processing entry point
 
 import { PDFPage, PDFStream, PDFArray, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
-import { SheetMapping, ProcessResult, ReplacementStats } from '@shared/types';
+import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning } from '@shared/types';
 import { readSpreadsheet } from '@core/spreadsheet/reader';
 import { loadPDF, savePDF, getPageCount } from './loader';
 import { parseContentStreamWithPositions } from './content-stream-parser';
@@ -62,7 +62,9 @@ export async function processPDF(
     });
 
     // Build replacement entries for each mapping
-    const replacementMap = new Map<string, Map<string, number>>(); // mappingId -> (source -> count)
+    const replacementMap = new Map<string, Map<string, number>>(); // mappingId -> (source -> replacementCount)
+    const matchMap = new Map<string, Map<string, number>>(); // mappingId -> (source -> matchCount)
+    const allWarnings: ProcessingWarning[] = [];
 
     const allReplacements = mappings.flatMap((mapping) => {
       const sourceData = spreadsheetData.data[mapping.sheetName][mapping.sourceColumn] || [];
@@ -100,11 +102,10 @@ export async function processPDF(
       );
       console.log('[PDF Processor] Sample replacements:', entries.slice(0, 3));
 
-      // Initialize replacement count tracking
-      replacementMap.set(
-        `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`,
-        new Map()
-      );
+      // Initialize replacement and match count tracking
+      const mappingId = `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`;
+      replacementMap.set(mappingId, new Map());
+      matchMap.set(mappingId, new Map());
 
       return entries;
     });
@@ -114,6 +115,7 @@ export async function processPDF(
     // Phase 3: Process pages
     const pages = pdfDoc.getPages();
     let totalReplacements = 0;
+    let totalMatches = 0;
 
     for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
       const page = pages[pageIndex];
@@ -130,12 +132,13 @@ export async function processPDF(
         // Process this page
         const pageReplacements = await processPage(page, allReplacements, pageIndex);
         totalReplacements += pageReplacements.totalCount;
+        totalMatches += pageReplacements.totalMatches;
 
         console.log(
-          `[PDF Processor] Page ${pageIndex + 1} completed: ${pageReplacements.totalCount} replacements`
+          `[PDF Processor] Page ${pageIndex + 1} completed: ${pageReplacements.totalCount} replacements from ${pageReplacements.totalMatches} matches`
         );
 
-        // Update replacement counts
+        // Update replacement and match counts
         for (const [mappingId, counts] of pageReplacements.countsByMapping) {
           const mappingCounts = replacementMap.get(mappingId);
           if (mappingCounts) {
@@ -143,6 +146,30 @@ export async function processPDF(
               mappingCounts.set(source, (mappingCounts.get(source) || 0) + count);
             }
           }
+        }
+
+        for (const [mappingId, counts] of pageReplacements.matchesByMapping) {
+          const mappingMatches = matchMap.get(mappingId);
+          if (mappingMatches) {
+            for (const [source, count] of counts) {
+              mappingMatches.set(source, (mappingMatches.get(source) || 0) + count);
+            }
+          }
+        }
+
+        // Collect character issues for this page
+        if (pageReplacements.characterIssues.size > 0) {
+          const characterIssues: { character: string; strings: string[] }[] = [];
+          for (const [char, strings] of pageReplacements.characterIssues) {
+            characterIssues.push({
+              character: char,
+              strings: Array.from(strings)
+            });
+          }
+          allWarnings.push({
+            pageNumber: pageIndex + 1,
+            characterIssues
+          });
         }
       } catch (error) {
         console.warn(`Error processing page ${pageIndex + 1}:`, error);
@@ -161,23 +188,42 @@ export async function processPDF(
     const stats: ReplacementStats[] = [];
     for (const mapping of mappings) {
       const mappingId = `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`;
-      const counts = replacementMap.get(mappingId);
-      const totalCount = counts ? Array.from(counts.values()).reduce((a, b) => a + b, 0) : 0;
+      const replacementCounts = replacementMap.get(mappingId);
+      const matchCounts = matchMap.get(mappingId);
+
+      const totalReplacementCount = replacementCounts
+        ? Array.from(replacementCounts.values()).reduce((a, b) => a + b, 0)
+        : 0;
+      const totalMatchCount = matchCounts
+        ? Array.from(matchCounts.values()).reduce((a, b) => a + b, 0)
+        : 0;
+      const failedCount = totalMatchCount - totalReplacementCount;
 
       stats.push({
         mappingId,
         sourceColumn: mapping.sourceColumn,
         targetColumn: mapping.targetColumn,
-        replacementCount: totalCount
+        replacementCount: totalReplacementCount,
+        matchCount: totalMatchCount,
+        failedCount: failedCount
       });
     }
 
-    onProgress?.(100, `Complete! Made ${totalReplacements} replacements.`);
+    const failedReplacements = totalMatches - totalReplacements;
+    const completionMessage =
+      failedReplacements > 0
+        ? `Complete! Made ${totalReplacements} replacements (${failedReplacements} failed due to encoding issues).`
+        : `Complete! Made ${totalReplacements} replacements.`;
+
+    onProgress?.(100, completionMessage);
 
     return {
       success: true,
       outputPath,
-      stats
+      stats,
+      warnings: allWarnings.length > 0 ? allWarnings : undefined,
+      totalMatches,
+      totalReplacements
     };
   } catch (error) {
     console.error('PDF processing error:', error);
@@ -201,14 +247,19 @@ async function processPage(
   pageIndex: number
 ): Promise<{
   totalCount: number;
+  totalMatches: number;
   countsByMapping: Map<string, Map<string, number>>;
+  matchesByMapping: Map<string, Map<string, number>>;
+  characterIssues: Map<string, Set<string>>;
 }> {
   const countsByMapping = new Map<string, Map<string, number>>();
+  const matchesByMapping = new Map<string, Map<string, number>>();
 
   // Initialize counters
   for (const replacement of replacements) {
     if (!countsByMapping.has(replacement.mappingId)) {
       countsByMapping.set(replacement.mappingId, new Map());
+      matchesByMapping.set(replacement.mappingId, new Map());
     }
   }
 
@@ -216,7 +267,13 @@ async function processPage(
   const contentStream = page.node.Contents();
   if (!contentStream) {
     console.log(`[PDF Processor] Page ${pageIndex + 1}: No content stream found`);
-    return { totalCount: 0, countsByMapping };
+    return {
+      totalCount: 0,
+      totalMatches: 0,
+      countsByMapping,
+      matchesByMapping,
+      characterIssues: new Map()
+    };
   }
 
   console.log(
@@ -230,7 +287,13 @@ async function processPage(
     console.warn(
       `[PDF Processor] Page ${pageIndex + 1}: No stream bytes extracted (got ${streamBytes?.length || 0} bytes)`
     );
-    return { totalCount: 0, countsByMapping };
+    return {
+      totalCount: 0,
+      totalMatches: 0,
+      countsByMapping,
+      matchesByMapping,
+      characterIssues: new Map()
+    };
   }
 
   console.log(
@@ -271,49 +334,81 @@ async function processPage(
   }
 
   // Process each text block independently
+  let totalPageMatches = 0;
+  const pageCharacterIssues = new Map<string, Set<string>>();
+
+  // Perform replacements on this block
+  const blockReplacements = replacements
+    .map((r) => ({
+      source: r.source,
+      target: r.target
+    }))
+    .sort((a, b) => b.source.length - a.source.length); // Longer first
+
   for (const block of parsed.textBlocks) {
     // Extract text from this block only
     extractTextFromBlock(block, fontMap);
 
-    // Perform replacements on this block
-    const blockReplacements = replacements
-      .map((r) => ({
-        source: r.source,
-        target: r.target
-      }))
-      .sort((a, b) => b.source.length - a.source.length); // Longer first
-
     const result = performReplacementsOnBlock(block, blockReplacements, fontMap, fontRegistry);
+
+    totalPageMatches += result.matchCount;
 
     // Track stats if modified
     if (result.modified && result.count > 0) {
       console.log(
-        `[PDF Processor] Page ${pageIndex + 1}: Block modified with ${result.count} replacements`
+        `[PDF Processor] Page ${pageIndex + 1}: Block modified with ${result.count} replacements from ${result.matchCount} matches`
       );
     }
 
-    if (result.warnings.length > 0) {
-      console.warn(`[PDF Processor] Page ${pageIndex + 1}: Block warnings:`, result.warnings);
+    // Collect character issues
+    if (result.characterIssues.size > 0) {
+      console.warn(
+        `[PDF Processor] Page ${pageIndex + 1}: Block has ${result.characterIssues.size} character encoding issues`
+      );
+      for (const [char, strings] of result.characterIssues) {
+        if (!pageCharacterIssues.has(char)) {
+          pageCharacterIssues.set(char, new Set());
+        }
+        for (const str of strings) {
+          pageCharacterIssues.get(char)!.add(str);
+        }
+      }
     }
   }
 
-  // Count total modifications
+  // Count total modifications and track per-mapping statistics
   const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
   let totalCount = 0;
 
-  for (const block of modifiedBlocks) {
+  // Track replacements and matches per source text
+  for (const block of parsed.textBlocks) {
     for (const element of block.textElements) {
-      // Count how many replacements were made in this element
+      // Count both matches and replacements for each source
       for (const replacement of replacements) {
-        const matches = element.text.match(new RegExp(replacement.target, 'g'));
-        if (matches) {
-          const count = matches.length;
+        const sourceMatches = element.text.match(
+          new RegExp(replacement.source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+        );
+        const targetMatches = element.text.match(
+          new RegExp(replacement.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+        );
+
+        if (sourceMatches) {
+          const matchCount = sourceMatches.length;
+          const matchCounts = matchesByMapping.get(replacement.mappingId)!;
+          matchCounts.set(
+            replacement.source,
+            (matchCounts.get(replacement.source) || 0) + matchCount
+          );
+        }
+
+        if (targetMatches && block.modified) {
+          const count = targetMatches.length;
           totalCount += count;
 
-          const mappingCounts = countsByMapping.get(replacement.mappingId)!;
-          mappingCounts.set(
+          const replacementCounts = countsByMapping.get(replacement.mappingId)!;
+          replacementCounts.set(
             replacement.source,
-            (mappingCounts.get(replacement.source) || 0) + count
+            (replacementCounts.get(replacement.source) || 0) + count
           );
         }
       }
@@ -333,7 +428,13 @@ async function processPage(
       // Validate
       if (patchedStream.length === 0) {
         console.error('[PDF Processor] ERROR: Patched stream is empty! Skipping update.');
-        return { totalCount: 0, countsByMapping };
+        return {
+          totalCount: 0,
+          totalMatches: totalPageMatches,
+          countsByMapping,
+          matchesByMapping,
+          characterIssues: pageCharacterIssues
+        };
       }
 
       console.log(
@@ -346,7 +447,13 @@ async function processPage(
       console.log('[PDF Processor] Successfully updated page content stream (surgical patch)');
     } catch (error) {
       console.error('[PDF Processor] Failed to patch content stream:', error);
-      return { totalCount: 0, countsByMapping };
+      return {
+        totalCount: 0,
+        totalMatches: totalPageMatches,
+        countsByMapping,
+        matchesByMapping,
+        characterIssues: pageCharacterIssues
+      };
     }
   } else {
     console.log(
@@ -354,7 +461,13 @@ async function processPage(
     );
   }
 
-  return { totalCount, countsByMapping };
+  return {
+    totalCount,
+    totalMatches: totalPageMatches,
+    countsByMapping,
+    matchesByMapping,
+    characterIssues: pageCharacterIssues
+  };
 }
 
 /**

@@ -415,6 +415,7 @@ export function encodeTextWithFallback(
   fontRegistry: FontRegistry
 ): EncodedText {
   const segments: EncodedSegment[] = [];
+  const missingCharacters: string[] = [];
   let currentFont = primaryFont;
   let currentBytes: number[] = [];
 
@@ -437,8 +438,12 @@ export function encodeTextWithFallback(
         console.warn(
           `[Font Handler] No fallback font found for character "${char}" in family ${currentFont.baseFont}`
         );
+        // Track missing character
+        if (!missingCharacters.includes(char)) {
+          missingCharacters.push(char);
+        }
         // Return encoding failure
-        return { segments: [], success: false };
+        return { segments: [], success: false, missingCharacters };
       }
 
       console.log(
@@ -486,5 +491,5 @@ export function encodeTextWithFallback(
 
   console.log(`[Font Handler] Successfully encoded text into ${segments.length} segment(s)`);
 
-  return { segments, success: true };
+  return { segments, success: true, missingCharacters: [] };
 }

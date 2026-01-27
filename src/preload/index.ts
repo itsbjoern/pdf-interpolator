@@ -38,9 +38,6 @@ contextBridge.exposeInMainWorld('electron', {
   setSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke(IPC_CHANNELS.SET_SETTINGS, settings),
 
-  // App
-  getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.GET_APP_VERSION),
-
   // Updates
   checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.CHECK_FOR_UPDATES),
   downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_UPDATE),
@@ -92,7 +89,6 @@ declare global {
       onProcessProgress: (callback: (progress: number, message: string) => void) => void;
       getSettings: () => Promise<AppSettings>;
       setSettings: (settings: Partial<AppSettings>) => Promise<AppSettings>;
-      getAppVersion: () => Promise<string>;
       // Updates
       checkForUpdates: () => Promise<{ updateInfo: any; available: boolean }>;
       downloadUpdate: () => Promise<{ success: boolean }>;
