@@ -8,9 +8,17 @@ import {
 } from '@shared/constants';
 import type { AppSettings } from '@shared/types';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import log from 'electron-log';
 import Store from 'electron-store';
+import { autoUpdater } from 'electron-updater';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Configure electron-updater logging
+autoUpdater.logger = log;
+if (autoUpdater.logger) {
+  (autoUpdater.logger as typeof log).transports.file.level = 'info';
+}
 
 // ESM compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -52,10 +60,58 @@ function createWindow() {
   }
 }
 
+// Auto-updater setup
+function setupAutoUpdater(window: BrowserWindow) {
+  // Configure auto-updater
+  autoUpdater.autoDownload = false; // Manual download after user confirmation
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  // Update available
+  autoUpdater.on('update-available', (info) => {
+    log.info('Update available:', info);
+    window.webContents.send('update-available', info);
+  });
+
+  // Update not available
+  autoUpdater.on('update-not-available', (info) => {
+    log.info('Update not available:', info);
+    window.webContents.send('update-not-available', info);
+  });
+
+  // Update error
+  autoUpdater.on('error', (err) => {
+    log.error('Update error:', err);
+    window.webContents.send('update-error', err.message);
+  });
+
+  // Download progress
+  autoUpdater.on('download-progress', (progressObj) => {
+    window.webContents.send('update-download-progress', progressObj);
+  });
+
+  // Update downloaded
+  autoUpdater.on('update-downloaded', (info) => {
+    log.info('Update downloaded:', info);
+    window.webContents.send('update-downloaded', info);
+  });
+}
+
 // App lifecycle
 app.whenReady().then(() => {
   createWindow();
   setupIpcHandlers();
+
+  // Initialize auto-updater
+  if (mainWindow) {
+    setupAutoUpdater(mainWindow);
+
+    // Check for updates on app start (after 3 seconds delay)
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch((err) => {
+        log.error('Failed to check for updates:', err);
+      });
+    }, 3000);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -170,5 +226,33 @@ function setupIpcHandlers() {
   // App version
   ipcMain.handle(IPC_CHANNELS.GET_APP_VERSION, () => {
     return app.getVersion();
+  });
+
+  // Auto-update handlers
+  ipcMain.handle(IPC_CHANNELS.CHECK_FOR_UPDATES, async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return {
+        updateInfo: result?.updateInfo,
+        available: result?.updateInfo?.version !== app.getVersion()
+      };
+    } catch (error) {
+      log.error('Error checking for updates:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_UPDATE, async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+      return { success: true };
+    } catch (error) {
+      log.error('Error downloading update:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.INSTALL_UPDATE, async () => {
+    autoUpdater.quitAndInstall(false, true);
   });
 }

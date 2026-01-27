@@ -1,5 +1,5 @@
-appId: com.bjoernf.pdf-rewriter
-productName: pdf-rewriter
+appId: com.bjoernf.pdf-interpolator
+productName: PDF Interpolator
 directories:
   buildResources: build
 files:
@@ -19,11 +19,17 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  target: dmg
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  notarize:
+    teamId: ${APPLE_TEAM_ID}
+afterSign: scripts/notarize.js
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
@@ -37,7 +43,9 @@ appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: itsbjoern
+  repo: pdf-interpolator
+  releaseType: release
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

@@ -1,5 +1,5 @@
 {
-  "name": "pdf-rewriter",
+  "name": "pdf-interpolator",
   "version": "0.1.0",
   "description": "Desktop application to replace text in PDFs using spreadsheet data",
   "main": "./out/main/index.js",
@@ -14,9 +14,9 @@
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:win": "npm run build && electron-builder --win --publish always",
+    "build:mac": "npm run build && electron-builder --mac --publish always",
+    "build:linux": "npm run build && electron-builder --linux --publish always"
   },
   "keywords": [
     "electron",
@@ -27,26 +27,27 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "electron-store": "^8.2.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@emotion/react": "^11.11.3",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.15.6",
+    "@mui/material": "^5.15.6",
+    "electron-store": "^8.2.0",
     "electron-updater": "^6.3.9",
     "i18next": "^23.7.16",
-    "react-i18next": "^14.0.0",
     "pdf-lib": "^1.17.1",
-    "xlsx": "^0.18.5",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "zustand": "^4.5.0",
-    "@mui/material": "^5.15.6",
-    "@mui/icons-material": "^5.15.6",
-    "@emotion/react": "^11.11.3",
-    "@emotion/styled": "^11.11.0"
+    "react-i18next": "^14.0.0",
+    "xlsx": "^0.18.5",
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
+    "@electron/notarize": "^3.1.1",
     "@types/node": "^22.19.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -63,8 +64,8 @@
     "vite": "^7.2.6"
   },
   "build": {
-    "appId": "com.bjoernf.pdf-rewriter",
-    "productName": "PDF Rewriter",
+    "appId": "com.bjoernf.pdf-interpolator",
+    "productName": "PDF Interpolator",
     "directories": {
       "output": "release"
     },

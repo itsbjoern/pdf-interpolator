@@ -16,7 +16,11 @@ export const IPC_CHANNELS = {
 
   // App
   GET_APP_VERSION: 'get-app-version',
-  CHECK_FOR_UPDATES: 'check-for-updates'
+
+  // Updates
+  CHECK_FOR_UPDATES: 'check-for-updates',
+  DOWNLOAD_UPDATE: 'download-update',
+  INSTALL_UPDATE: 'install-update'
 } as const;
 
 // Supported file extensions

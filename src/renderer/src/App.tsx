@@ -14,6 +14,7 @@ import { useAppStore } from './store/useAppStore';
 import SpreadsheetSelector from './components/SpreadsheetSelector';
 import PDFSelector from './components/PDFSelector';
 import ProcessButton from './components/ProcessButton';
+import UpdateNotification from './components/UpdateNotification';
 
 const theme = createTheme({
   palette: {
@@ -119,6 +120,9 @@ function App() {
           <ProcessButton />
         </Paper>
       </Container>
+
+      {/* Update notification component */}
+      <UpdateNotification />
     </ThemeProvider>
   );
 }
