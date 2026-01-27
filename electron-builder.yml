@@ -44,8 +44,7 @@ appImage:
 npmRebuild: false
 snap:
   publish:
-    - provider: "generic"
-      url: "https://null/"
+    - github
 publish:
   provider: github
   owner: itsbjoern
