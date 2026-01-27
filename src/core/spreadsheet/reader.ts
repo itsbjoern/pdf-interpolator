@@ -37,12 +37,16 @@ export function readSpreadsheet(filePath: string, selectedSheets?: string[]): Sp
       }
 
       // First row is assumed to be headers
-      const headers = (jsonData[0] as string[]).filter((h) => h !== undefined && h !== '');
+      const headers = jsonData[0] as string[];
 
       const columns = new Set<string>();
       const data: Record<string, string[]> = {};
 
       headers.forEach((header, colIndex) => {
+        if (!header) {
+          return; // Skip empty headers
+        }
+
         // Add sheet name prefix if column exists in multiple sheets
         columns.add(header);
 
