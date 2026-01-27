@@ -1,11 +1,14 @@
 import {
   Error as ErrorIcon,
+  ExpandMore as ExpandMoreIcon,
   Info as InfoIcon,
   CheckCircle as SuccessIcon,
-  Warning as WarningIcon,
-  ExpandMore as ExpandMoreIcon
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   AlertTitle,
   Box,
@@ -17,20 +20,12 @@ import {
   DialogTitle,
   Divider,
   List,
-  ListItem,
   Paper,
-  Typography,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Table,
-  TableBody,
-  TableCell,
-  TableRow
+  Typography
 } from '@mui/material';
 import type { ProcessResult } from '@shared/types';
-import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ResultsDialogProps {
   open: boolean;
