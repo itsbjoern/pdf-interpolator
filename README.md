@@ -1,3 +1,5 @@
+![PDF Interpolator Logo](./build/icons/64x64.png)
+
 # PDF Interpolator
 
 A desktop application for replacing text in PDF files using data from spreadsheets.
@@ -15,7 +17,7 @@ Download the latest version for your operating system from the [releases page](h
 **Available for:**
 - Windows (.exe installer)
 - macOS (DMG)
-- Linux (AppImage, snap, deb)
+- Linux (AppImage, deb)
 
 ## How to Use
 
