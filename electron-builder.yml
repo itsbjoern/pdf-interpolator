@@ -1,7 +1,9 @@
 appId: com.bjoernf.pdf-interpolator
 productName: PDF Interpolator
+
 directories:
   buildResources: build
+
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -9,15 +11,20 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+
 asarUnpack:
   - resources/**
+
 win:
-  executableName: test
+  executableName: pdf-interpolator
+  target:
+    - nsis
+
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+  allowToChangeInstallationDirectory: true
+
 mac:
   target: dmg
   hardenedRuntime: true
@@ -27,28 +34,47 @@ mac:
   extendInfo:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize:
-    teamId: ${APPLE_TEAM_ID}
+
 afterSign: scripts/notarize.js
+
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  iconSize: 160
+  iconTextSize: 12
+  window:
+    width: 660
+    height: 400
+  contents:
+    - x: 180
+      y: 170
+      type: file
+    - x: 480
+      y: 170
+      type: link
+      path: /Applications
+
 linux:
+  artifactName: ${name}-${version}-${os}-${arch}.${ext}
   target:
     - AppImage
     - snap
     - deb
   maintainer: "bjoernf.com"
   category: Utility
+
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
+
 npmRebuild: false
+
 snap:
   publish:
     - github
+
 publish:
   provider: github
   owner: itsbjoern
   repo: pdf-interpolator
   releaseType: release
+
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
