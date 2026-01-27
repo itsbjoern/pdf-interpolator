@@ -1,16 +1,16 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import Store from 'electron-store';
+import { processPDF } from '@core/pdf';
+import { readSpreadsheet } from '@core/spreadsheet/reader';
 import { is } from '@electron-toolkit/utils';
-import { AppSettings } from '@shared/types';
 import {
   IPC_CHANNELS,
-  SUPPORTED_SPREADSHEET_EXTENSIONS,
-  SUPPORTED_PDF_EXTENSIONS
+  SUPPORTED_PDF_EXTENSIONS,
+  SUPPORTED_SPREADSHEET_EXTENSIONS
 } from '@shared/constants';
-import { readSpreadsheet } from '@core/spreadsheet/reader';
-import { processPDF } from '@core/pdf';
+import type { AppSettings } from '@shared/types';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import Store from 'electron-store';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // ESM compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -143,13 +143,7 @@ function setupIpcHandlers() {
         };
 
         // Call PDF processor
-        const result = await processPDF(
-          pdfPath,
-          spreadsheetPath,
-          mappings,
-          outputPath,
-          onProgress
-        );
+        const result = await processPDF(pdfPath, spreadsheetPath, mappings, outputPath, onProgress);
 
         return result;
       } catch (error) {

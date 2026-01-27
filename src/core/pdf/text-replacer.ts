@@ -1,15 +1,8 @@
 // Text replacement logic
 
-import {
-  ReplacementEntry,
-  PDFOperation,
-  TextBlock,
-  FontInfo,
-  EncodedText,
-  PDFValue
-} from './types';
 import { encodeText, encodeTextWithFallback } from './font-handler';
-import { FontRegistry } from './font-registry';
+import type { FontRegistry } from './font-registry';
+import type { EncodedText, FontInfo, PDFOperation, ReplacementEntry, TextBlock } from './types';
 
 /**
  * Replacement statistics
@@ -54,9 +47,7 @@ function createOperationsForMultiFont(
 
       lastFont = segment.font;
 
-      console.log(
-        `[Text Replacer] Injecting Tf operator: ${fontName} ${currentFontSize}`
-      );
+      console.log(`[Text Replacer] Injecting Tf operator: ${fontName} ${currentFontSize}`);
     }
 
     // Add Tj operator with the text segment
@@ -91,22 +82,6 @@ function createOperationsForMultiFont(
 }
 
 /**
- * Extract spacing adjustments from TJ array
- * Returns array of numbers representing spacing values in the array
- */
-function extractTJSpacing(tjArray: PDFValue[]): number[] {
-  const spacing: number[] = [];
-
-  for (const item of tjArray) {
-    if (typeof item === 'number') {
-      spacing.push(item);
-    }
-  }
-
-  return spacing;
-}
-
-/**
  * Perform text replacements on a single TextBlock (NEW surgical approach)
  * Updates the block in-place and sets the modified flag
  * Uses FontRegistry for cross-font character fallback
@@ -115,7 +90,7 @@ export function performReplacementsOnBlock(
   block: TextBlock,
   replacements: ReplacementEntry[],
   fontMap: Map<string, FontInfo>,
-  fontRegistry?: FontRegistry
+  fontRegistry: FontRegistry
 ): ReplacementResult {
   let blockModified = false;
   let totalCount = 0;
@@ -136,39 +111,20 @@ export function performReplacementsOnBlock(
       const newText = element.text.replace(new RegExp(escapeRegex(source), 'g'), target);
       const count = (element.text.match(new RegExp(escapeRegex(source), 'g')) || []).length;
 
-      // Try encoding with fallback if registry available
-      let encodedText: EncodedText | null = null;
-      if (fontRegistry) {
-        encodedText = encodeTextWithFallback(newText, element.font, fontRegistry);
-
-        if (!encodedText.success) {
-          const warning = `Cannot encode "${newText}" - no suitable font found`;
-          if (!warnings.includes(warning)) {
-            warnings.push(warning);
-          }
-          continue;
+      const encodedText = encodeTextWithFallback(newText, element.font, fontRegistry);
+      if (!encodedText.success) {
+        const warning = `Cannot encode "${newText}" - no suitable font found`;
+        if (!warnings.includes(warning)) {
+          warnings.push(warning);
         }
-      } else {
-        // Fallback to old encoding method
-        const encoded = encodeText(newText, element.font, fontMap);
-        if (!encoded) {
-          const warning = `Cannot encode "${newText}" with font ${element.font.name}`;
-          if (!warnings.includes(warning)) {
-            warnings.push(warning);
-          }
-          continue;
-        }
-        // Convert to EncodedText format
-        encodedText = {
-          segments: [{ bytes: encoded, font: element.font }],
-          success: true
-        };
+        continue;
       }
 
       // Check if we need multi-font replacement
       const needsMultiFontReplacement =
         encodedText.segments.length > 1 ||
-        (encodedText.segments.length === 1 && encodedText.segments[0].font.name !== element.font.name);
+        (encodedText.segments.length === 1 &&
+          encodedText.segments[0].font.name !== element.font.name);
 
       if (needsMultiFontReplacement) {
         // Complex case: need font switching
@@ -185,9 +141,7 @@ export function performReplacementsOnBlock(
           block.currentFontSize
         );
 
-        console.log(
-          `[Text Replacer] Created ${newOperations.length} replacement operations:`
-        );
+        console.log(`[Text Replacer] Created ${newOperations.length} replacement operations:`);
         for (const op of newOperations) {
           console.log(`[Text Replacer]   - ${op.operator}`);
         }
@@ -199,9 +153,7 @@ export function performReplacementsOnBlock(
             block.operationReplacements = new Map();
           }
           block.operationReplacements.set(opIndex, newOperations);
-          console.log(
-            `[Text Replacer] Stored replacement for operation at index ${opIndex}`
-          );
+          console.log(`[Text Replacer] Stored replacement for operation at index ${opIndex}`);
           blockModified = true;
           totalCount += count;
           element.text = newText;
@@ -297,25 +249,4 @@ function updateOperationText(
  */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Build replacement entries from spreadsheet data
- */
-export function buildReplacementEntries(
-  sourceValues: string[],
-  targetValue: string
-): ReplacementEntry[] {
-  const entries: ReplacementEntry[] = [];
-
-  for (const sourceValue of sourceValues) {
-    if (sourceValue && sourceValue.trim()) {
-      entries.push({
-        source: targetValue, // What to find in PDF
-        target: sourceValue // What to replace with
-      });
-    }
-  }
-
-  return entries;
 }

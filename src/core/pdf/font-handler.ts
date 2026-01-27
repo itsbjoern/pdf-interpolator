@@ -392,11 +392,10 @@ export function encodeText(
             console.log(
               `Character "${char}" found in alternative font ${otherFontName} with code ${code}`
             );
-            continue;
           }
         }
         if (!code) {
-          continue;
+          return null; // Encoding failure
         }
       }
       bytes.push(code);
@@ -438,8 +437,8 @@ export function encodeTextWithFallback(
         console.warn(
           `[Font Handler] No fallback font found for character "${char}" in family ${currentFont.baseFont}`
         );
-        // Skip if no fallback found
-        continue;
+        // Return encoding failure
+        return { segments: [], success: false };
       }
 
       console.log(

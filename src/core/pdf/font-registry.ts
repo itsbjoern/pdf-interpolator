@@ -1,6 +1,6 @@
 // Font registry for cross-font character fallback
 
-import { FontInfo } from './types';
+import type { FontInfo } from './types';
 
 /**
  * Font family grouping fonts by BaseFont
