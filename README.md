@@ -17,7 +17,7 @@ Download the latest version for your operating system from the [releases page](h
 **Available for:**
 - Windows (.exe installer)
 - macOS (DMG)
-- Linux (AppImage, deb)
+- Linux (AppImage, snap, deb)
 
 ## How to Use
 
