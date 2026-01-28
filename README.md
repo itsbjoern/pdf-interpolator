@@ -6,11 +6,16 @@ A desktop application for replacing text in PDF files using data from spreadshee
 
 ![GitHub Release](https://img.shields.io/github/v/release/itsbjoern/pdf-interpolator)
 
+
 ## Overview
 
 PDF Interpolator reads a spreadsheet (Excel or CSV) and replaces matching text in a PDF document. You define which columns to use: one column contains the text to find, another contains the replacement text.
 
 The application preserves the original PDF formatting, fonts, and layout while performing the replacements.
+
+|||
+|-|-|
+|![PDF Interpolator Screenshot](./readme/preview.png)|![PDF Interpolator Screenshot](./readme/success.png)|
 
 ## Download
 
