@@ -1,5 +1,5 @@
-import { Box, Button, Typography, Alert } from '@mui/material';
-import { PictureAsPdf } from '@mui/icons-material';
+import { Box, Button, Typography, Alert, ButtonGroup } from '@mui/material';
+import { PictureAsPdf as PictureAsPdfIcon, Close as CloseIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { useState } from 'react';
@@ -29,9 +29,16 @@ export default function PDFSelector() {
   return (
     <Box>
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
-        <Button variant="outlined" startIcon={<PictureAsPdf />} onClick={handleSelectPDF}>
-          {pdfPath ? t('pdf.changeButton') : t('pdf.selectButton')}
-        </Button>
+        <ButtonGroup variant="outlined">
+          <Button startIcon={<PictureAsPdfIcon />} onClick={handleSelectPDF}>
+            {pdfPath ? t('pdf.changeButton') : t('pdf.selectButton')}
+          </Button>
+          {pdfPath ? (
+            <Button size="small" onClick={() => setPdfPath(null)} disabled={!pdfPath}>
+              <CloseIcon />
+            </Button>
+          ) : null}
+        </ButtonGroup>
 
         {pdfPath && (
           <Typography variant="body2" color="text.secondary">

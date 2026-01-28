@@ -1,12 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  Snackbar,
-  Alert,
-  Button,
-  LinearProgress,
-  Typography,
-  Box
-} from '@mui/material';
+import { Snackbar, Alert, Button, LinearProgress, Typography, Box } from '@mui/material';
 import { Download, Update } from '@mui/icons-material';
 
 interface UpdateInfo {
@@ -81,7 +74,7 @@ export default function UpdateNotification() {
       {/* Update Available Notification */}
       <Snackbar
         open={updateAvailable && !downloading && !updateDownloaded}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
       >
         <Alert
           severity="info"
@@ -92,17 +85,12 @@ export default function UpdateNotification() {
             </Button>
           }
         >
-          <Typography variant="body2">
-            New version {updateInfo?.version} is available
-          </Typography>
+          <Typography variant="body2">New version {updateInfo?.version} is available</Typography>
         </Alert>
       </Snackbar>
 
       {/* Downloading Progress */}
-      <Snackbar
-        open={downloading}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
+      <Snackbar open={downloading} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <Alert severity="info" icon={<Download />}>
           <Box sx={{ width: 200 }}>
             <Typography variant="body2" gutterBottom>
@@ -114,10 +102,7 @@ export default function UpdateNotification() {
       </Snackbar>
 
       {/* Update Downloaded */}
-      <Snackbar
-        open={updateDownloaded}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
+      <Snackbar open={updateDownloaded} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <Alert
           severity="success"
           action={
@@ -137,7 +122,7 @@ export default function UpdateNotification() {
         open={!!error}
         autoHideDuration={6000}
         onClose={() => setError(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <Alert severity="error" onClose={() => setError(null)}>
           <Typography variant="body2">{error}</Typography>

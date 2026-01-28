@@ -8,9 +8,14 @@ import {
   Checkbox,
   Paper,
   Autocomplete,
-  TextField
+  TextField,
+  ButtonGroup
 } from '@mui/material';
-import { ArrowForward, FolderOpen } from '@mui/icons-material';
+import {
+  ArrowForward as ArrowForwardIcon,
+  FolderOpen as FolderOpenIcon,
+  Close as CloseIcon
+} from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { useState } from 'react';
@@ -75,14 +80,28 @@ export default function SpreadsheetSelector() {
   return (
     <Box>
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
-        <Button
-          variant="outlined"
-          startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <FolderOpen />}
-          onClick={handleSelectSpreadsheet}
-          disabled={loading}
-        >
-          {spreadsheetData ? t('spreadsheet.changeButton') : t('spreadsheet.selectButton')}
-        </Button>
+        <ButtonGroup variant="outlined">
+          <Button
+            startIcon={
+              loading ? <CircularProgress size={20} color="inherit" /> : <FolderOpenIcon />
+            }
+            onClick={handleSelectSpreadsheet}
+            disabled={loading}
+          >
+            {spreadsheetData ? t('spreadsheet.changeButton') : t('spreadsheet.selectButton')}
+          </Button>
+          {spreadsheetPath ? (
+            <Button
+              size="small"
+              onClick={() => {
+                setSpreadsheetPath(null);
+                setSpreadsheetData(null);
+              }}
+            >
+              <CloseIcon />
+            </Button>
+          ) : null}
+        </ButtonGroup>
 
         {spreadsheetData && (
           <Typography variant="body2" color="text.secondary">
@@ -138,7 +157,7 @@ export default function SpreadsheetSelector() {
                         }
                       />
 
-                      <ArrowForward color="action" />
+                      <ArrowForwardIcon color="action" />
 
                       <Autocomplete
                         disablePortal

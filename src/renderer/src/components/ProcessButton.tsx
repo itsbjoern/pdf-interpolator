@@ -1,5 +1,17 @@
-import { Box, Button, Typography, LinearProgress, Paper } from '@mui/material';
-import { PlayArrow, Save } from '@mui/icons-material';
+import {
+  Box,
+  Button,
+  Typography,
+  LinearProgress,
+  Paper,
+  IconButton,
+  ButtonGroup
+} from '@mui/material';
+import {
+  PlayArrow as PlayArrowIcon,
+  Save as SaveIcon,
+  Close as CloseIcon
+} from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { useState, useEffect } from 'react';
@@ -128,15 +140,17 @@ export default function ProcessButton() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
-        <Button
-          variant="outlined"
-          startIcon={<Save />}
-          onClick={handleSelectOutput}
-          disabled={isProcessing}
-        >
-          {outputPath ? t('process.changeOutput') : t('process.selectOutput')}
-        </Button>
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 6 }}>
+        <ButtonGroup variant="outlined">
+          <Button startIcon={<SaveIcon />} onClick={handleSelectOutput} disabled={isProcessing}>
+            {outputPath ? t('process.changeOutput') : t('process.selectOutput')}
+          </Button>
+          {outputPath ? (
+            <Button size="small" onClick={() => setOutputPath(null)} disabled={isProcessing}>
+              <CloseIcon />
+            </Button>
+          ) : null}
+        </ButtonGroup>
 
         {outputPath && (
           <Typography variant="body2" color="text.secondary">
@@ -148,10 +162,15 @@ export default function ProcessButton() {
       <Button
         variant="contained"
         size="large"
-        startIcon={<PlayArrow />}
+        startIcon={<PlayArrowIcon />}
         onClick={handleProcess}
         disabled={!isReadyToProcess || isProcessing}
-        fullWidth
+        sx={{
+          position: 'fixed',
+          bottom: 32,
+          right: 40,
+          zIndex: 1000
+        }}
       >
         {isProcessing ? t('process.processing') : t('process.startButton')}
       </Button>

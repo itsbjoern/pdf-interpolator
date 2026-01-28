@@ -37,8 +37,8 @@ function createWindow() {
   const icon = is.dev ? join(__dirname, '../../build/icon.png') : undefined; // electron-builder handles production icons
 
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 860,
+    height: 600,
     minWidth: 800,
     minHeight: 600,
     title: 'PDF Interpolator',
