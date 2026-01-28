@@ -12,13 +12,13 @@ asarUnpack:
   - resources/**
 
 win:
-  executableName: ${productName}
+  executableName: PDF Interpolator
   target:
     - nsis
 
 nsis:
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
+  shortcutName: PDF Interpolator
+  uninstallDisplayName: PDF Interpolator
 
 mac:
   artifactName: PDF-Interpolator-${version}-${arch}.${ext}

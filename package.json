@@ -1,6 +1,6 @@
 {
   "name": "pdf-interpolator",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Desktop application to replace text in PDFs using spreadsheet data",
   "main": "./out/main/index.js",
   "scripts": {
