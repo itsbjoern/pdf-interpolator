@@ -2,35 +2,31 @@ appId: com.bjoernf.pdf-interpolator
 productName: PDF Interpolator
 
 directories:
+  output: release
   buildResources: build
 
 files:
-  - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - 'out/**/*'
 
 asarUnpack:
   - resources/**
 
 win:
-  executableName: pdf-interpolator
+  executableName: ${productName}
   target:
     - nsis
 
 nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
-  allowToChangeInstallationDirectory: true
 
 mac:
+  artifactName: PDF-Interpolator-${version}-${arch}.${ext}
   target:
     - dmg
     - zip
   hardenedRuntime: true
-  gatekeeperAssess: false
+  category: public.app-category.productivity
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -56,7 +52,7 @@ dmg:
       path: /Applications
 
 linux:
-  artifactName: ${name}-${version}-${os}-${arch}.${ext}
+  artifactName: PDF-Interpolator-${version}-${os}-${arch}.${ext}
   target:
     - AppImage
     - snap

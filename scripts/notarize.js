@@ -1,5 +1,4 @@
 const { notarize } = require('@electron/notarize');
-const { build } = require('../package.json');
 
 exports.default = async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
@@ -18,10 +17,10 @@ exports.default = async function notarizing(context) {
   console.log(`Notarizing ${appName}...`);
 
   return await notarize({
-    appBundleId: build.appId,
+    appBundleId: 'com.bjoernf.pdf-interpolator',
     appPath: `${appOutDir}/${appName}.app`,
     appleId: process.env.APPLE_ID,
     appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
-    teamId: process.env.APPLE_TEAM_ID,
+    teamId: process.env.APPLE_TEAM_ID
   });
 };
