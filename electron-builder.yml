@@ -26,6 +26,9 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 mac:
+  target:
+    - dmg
+    - zip
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -37,7 +40,7 @@ mac:
 afterSign: scripts/notarize.js
 
 dmg:
-  artifactName: PDF.Interpolator-${version}-${arch}.${ext}
+  artifactName: PDF-Interpolator-${version}-${arch}.${ext}
   iconSize: 160
   iconTextSize: 12
   window:
