@@ -1,12 +1,4 @@
-import {
-  Box,
-  Button,
-  Typography,
-  LinearProgress,
-  Paper,
-  IconButton,
-  ButtonGroup
-} from '@mui/material';
+import { Box, Button, Typography, LinearProgress, Paper, ButtonGroup } from '@mui/material';
 import {
   PlayArrow as PlayArrowIcon,
   Save as SaveIcon,
