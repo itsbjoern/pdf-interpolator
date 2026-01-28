@@ -29,9 +29,7 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
         `[Content Stream Writer] Block has ${block.operationReplacements.size} operation replacement(s)`
       );
       for (const [idx, ops] of block.operationReplacements) {
-        console.log(
-          `[Content Stream Writer]   Index ${idx}: ${ops.length} replacement operations`
-        );
+        console.log(`[Content Stream Writer]   Index ${idx}: ${ops.length} replacement operations`);
       }
     }
   }
@@ -48,13 +46,7 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
       const replacements = blockInfo.block.operationReplacements.get(blockInfo.localIndex);
 
       if (replacements && replacements.length > 0) {
-        // Emit replacement operations instead of original
-        console.log(
-          `[Content Stream Writer] Replacing operation ${operation.operator} at index ${blockInfo.localIndex} with ${replacements.length} new operations`
-        );
-
         for (const replOp of replacements) {
-          console.log(`[Content Stream Writer]   Emitting: ${replOp.operator}`);
           byteArrays.push(serializeOperation(replOp));
         }
         continue; // Skip original operation
@@ -109,7 +101,6 @@ function serializeOperation(operation: any): Uint8Array {
   }
   return result;
 }
-
 
 /**
  * Serialize a PDF value to bytes (avoids string encoding issues)

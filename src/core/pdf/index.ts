@@ -1,6 +1,6 @@
 // Main PDF processing entry point
 
-import { PDFPage, PDFStream, PDFArray, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
+import { PDFPage, PDFStream, PDFArray, PDFRef, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
 import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning } from '@shared/types';
 import { readSpreadsheet } from '@core/spreadsheet/reader';
 import { loadPDF, savePDF, getPageCount } from './loader';
@@ -485,13 +485,20 @@ async function getContentStreamBytes(
     }
 
     if (contentStream instanceof PDFArray) {
-      // Multiple content streams - concatenate them
-      const streams = contentStream.asArray();
+      // Multiple content streams - array holds PDFRefs, resolve and concatenate
+      const context = page.doc.context;
+      const streamRefs = contentStream.asArray();
       const allBytes: number[] = [];
 
-      for (const streamRef of streams) {
-        if (streamRef instanceof PDFStream) {
-          const bytes = await decodeStream(streamRef);
+      for (const refOrStream of streamRefs) {
+        const stream: PDFStream | undefined =
+          refOrStream instanceof PDFRef
+            ? context.lookupMaybe(refOrStream, PDFStream)
+            : refOrStream instanceof PDFStream
+              ? refOrStream
+              : undefined;
+        if (stream) {
+          const bytes = await decodeStream(stream);
           if (bytes) {
             allBytes.push(...Array.from(bytes));
           }

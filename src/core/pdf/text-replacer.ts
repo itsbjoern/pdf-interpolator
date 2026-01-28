@@ -161,11 +161,6 @@ export function performReplacementsOnBlock(
           block.currentFontSize
         );
 
-        console.log(`[Text Replacer] Created ${newOperations.length} replacement operations:`);
-        for (const op of newOperations) {
-          console.log(`[Text Replacer]   - ${op.operator}`);
-        }
-
         // Store operation replacement
         const opIndex = block.operations.indexOf(element.operation);
         if (opIndex !== -1) {
