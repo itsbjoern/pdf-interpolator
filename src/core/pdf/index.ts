@@ -1,7 +1,4 @@
-// Main PDF processing entry point
-
 import { deflateSync } from 'node:zlib';
-import { readSpreadsheet } from '@core/spreadsheet/reader';
 import { getSystemLanguage } from '@shared/i18n/format';
 import type {
   ProcessingWarning,
@@ -20,6 +17,7 @@ import {
   PDFRef,
   PDFStream
 } from 'pdf-lib';
+import { readSpreadsheet } from '../spreadsheet/reader';
 import { parseContentStreamWithPositions } from './content-stream-parser';
 import { patchContentStream } from './content-stream-writer';
 import { formatErrorForUser } from './error-handler';

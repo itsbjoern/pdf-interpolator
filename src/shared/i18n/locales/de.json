@@ -69,5 +69,12 @@
     "invalidSpreadsheet": "Fehler beim Lesen der Tabelle",
     "invalidPDF": "Fehler beim Lesen der PDF",
     "processingFailed": "Fehler beim Verarbeiten der PDF"
+  },
+  "update": {
+    "download": "Herunterladen",
+    "available": "Neue Version {{version}} ist verfügbar",
+    "downloading": "Update wird heruntergeladen... {{percent}}%",
+    "restartAndInstall": "Neu starten & Installieren",
+    "downloaded": "Update heruntergeladen! Neu starten, um Version {{version}} zu installieren"
   }
 }

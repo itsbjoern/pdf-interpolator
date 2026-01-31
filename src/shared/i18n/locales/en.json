@@ -69,5 +69,12 @@
     "invalidSpreadsheet": "Failed to read spreadsheet",
     "invalidPDF": "Failed to read PDF",
     "processingFailed": "Failed to process PDF"
+  },
+  "update": {
+    "download": "Download",
+    "available": "New version {{version}} is available",
+    "downloading": "Downloading update... {{percent}}%",
+    "restartAndInstall": "Restart & Install",
+    "downloaded": "Update downloaded! Restart to install version {{version}}"
   }
 }

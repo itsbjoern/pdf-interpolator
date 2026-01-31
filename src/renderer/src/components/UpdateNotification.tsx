@@ -2,8 +2,10 @@ import { Download, Update } from '@mui/icons-material';
 import { Alert, Box, Button, LinearProgress, Snackbar, Typography } from '@mui/material';
 import type { UpdateInfo } from 'electron-updater';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function UpdateNotification() {
+  const { t } = useTranslation();
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -74,11 +76,13 @@ export default function UpdateNotification() {
           icon={<Update />}
           action={
             <Button color="inherit" size="small" onClick={handleDownload}>
-              Download
+              {t('update.download')}
             </Button>
           }
         >
-          <Typography variant="body2">New version {updateInfo?.version} is available</Typography>
+          <Typography variant="body2">
+            {t('update.available', { version: updateInfo?.version })}
+          </Typography>
         </Alert>
       </Snackbar>
 
@@ -86,7 +90,7 @@ export default function UpdateNotification() {
         <Alert severity="info" icon={<Download />}>
           <Box sx={{ width: 200 }}>
             <Typography variant="body2" gutterBottom>
-              Downloading update... {Math.round(downloadProgress)}%
+              {t('update.downloading', { percent: Math.round(downloadProgress) })}
             </Typography>
             <LinearProgress variant="determinate" value={downloadProgress} />
           </Box>
@@ -98,12 +102,12 @@ export default function UpdateNotification() {
           severity="success"
           action={
             <Button color="inherit" size="small" onClick={handleInstall}>
-              Restart & Install
+              {t('update.restartAndInstall')}
             </Button>
           }
         >
           <Typography variant="body2">
-            Update downloaded! Restart to install version {updateInfo?.version}
+            {t('update.downloaded', { version: updateInfo?.version })}
           </Typography>
         </Alert>
       </Snackbar>
