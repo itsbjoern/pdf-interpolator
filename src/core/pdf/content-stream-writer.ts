@@ -154,49 +154,22 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
 }
 
 /**
- * Convert bytes to PDF string literal with proper escaping
+ * Convert bytes to PDF hex string notation
  * Returns bytes directly to avoid JavaScript string encoding issues
+ * Uses <...> notation instead of (...) to match original PDF encoding
  */
 function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
   const result: number[] = [];
 
-  result.push(0x28); // (
+  result.push(0x3c); // <
 
+  // Convert each byte to two hex digits
   for (const byte of bytes) {
-    // Escape special characters that have meaning in PDF strings
-    if (byte === 0x28) {
-      // (
-      result.push(0x5c, 0x28); // \(
-    } else if (byte === 0x29) {
-      // )
-      result.push(0x5c, 0x29); // \)
-    } else if (byte === 0x5c) {
-      // \
-      result.push(0x5c, 0x5c); // \\
-    } else if (byte === 0x0a) {
-      // \n
-      result.push(0x5c, 0x6e); // \n
-    } else if (byte === 0x0d) {
-      // \r
-      result.push(0x5c, 0x72); // \r
-    } else if (byte === 0x09) {
-      // \t
-      result.push(0x5c, 0x74); // \t
-    } else if (byte === 0x08) {
-      // \b
-      result.push(0x5c, 0x62); // \b
-    } else if (byte === 0x0c) {
-      // \f
-      result.push(0x5c, 0x66); // \f
-    } else if (byte === 0x00) {
-      // Null is not allowed in PDF literal strings; use octal escape \000
-      result.push(0x5c, 0x30, 0x30, 0x30); // \000
-    } else {
-      result.push(byte);
-    }
+    const hex = byte.toString(16).toUpperCase().padStart(2, '0');
+    result.push(hex.charCodeAt(0), hex.charCodeAt(1));
   }
 
-  result.push(0x29); // )
+  result.push(0x3e); // >
 
   const resultBytes = new Uint8Array(result);
   return resultBytes;
