@@ -20,7 +20,12 @@ export const IPC_CHANNELS = {
   // Updates
   CHECK_FOR_UPDATES: 'check-for-updates',
   DOWNLOAD_UPDATE: 'download-update',
-  INSTALL_UPDATE: 'install-update'
+  INSTALL_UPDATE: 'install-update',
+  UPDATE_AVAILABLE: 'update-available',
+  UPDATE_NOT_AVAILABLE: 'update-not-available',
+  UPDATE_ERROR: 'update-error',
+  UPDATE_DOWNLOAD_PROGRESS: 'update-download-progress',
+  UPDATE_DOWNLOADED: 'update-downloaded'
 } as const;
 
 // Supported file extensions

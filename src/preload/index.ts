@@ -50,28 +50,28 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Update event listeners
   onUpdateAvailable: (callback: (info: any) => void) => {
-    ipcRenderer.on('update-available', (_event, info) => callback(info));
+    ipcRenderer.on(IPC_CHANNELS.UPDATE_AVAILABLE, (_event, info) => callback(info));
   },
   onUpdateNotAvailable: (callback: (info: any) => void) => {
-    ipcRenderer.on('update-not-available', (_event, info) => callback(info));
+    ipcRenderer.on(IPC_CHANNELS.UPDATE_NOT_AVAILABLE, (_event, info) => callback(info));
   },
   onUpdateError: (callback: (error: string) => void) => {
-    ipcRenderer.on('update-error', (_event, error) => callback(error));
+    ipcRenderer.on(IPC_CHANNELS.UPDATE_ERROR, (_event, error) => callback(error));
   },
   onUpdateDownloadProgress: (callback: (progress: any) => void) => {
-    ipcRenderer.on('update-download-progress', (_event, progress) => callback(progress));
+    ipcRenderer.on(IPC_CHANNELS.UPDATE_DOWNLOAD_PROGRESS, (_event, progress) => callback(progress));
   },
   onUpdateDownloaded: (callback: (info: any) => void) => {
-    ipcRenderer.on('update-downloaded', (_event, info) => callback(info));
+    ipcRenderer.on(IPC_CHANNELS.UPDATE_DOWNLOADED, (_event, info) => callback(info));
   },
 
   // Cleanup
   removeUpdateListeners: () => {
-    ipcRenderer.removeAllListeners('update-available');
-    ipcRenderer.removeAllListeners('update-not-available');
-    ipcRenderer.removeAllListeners('update-error');
-    ipcRenderer.removeAllListeners('update-download-progress');
-    ipcRenderer.removeAllListeners('update-downloaded');
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATE_AVAILABLE);
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATE_NOT_AVAILABLE);
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATE_ERROR);
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATE_DOWNLOAD_PROGRESS);
+    ipcRenderer.removeAllListeners(IPC_CHANNELS.UPDATE_DOWNLOADED);
   }
 });
 

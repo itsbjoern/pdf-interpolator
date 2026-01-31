@@ -73,30 +73,30 @@ function setupAutoUpdater(window: BrowserWindow) {
   // Update available
   autoUpdater.on('update-available', (info) => {
     log.info('Update available:', info);
-    window.webContents.send('update-available', info);
+    window.webContents.send(IPC_CHANNELS.UPDATE_AVAILABLE, info);
   });
 
   // Update not available
   autoUpdater.on('update-not-available', (info) => {
     log.info('Update not available:', info);
-    window.webContents.send('update-not-available', info);
+    window.webContents.send(IPC_CHANNELS.UPDATE_NOT_AVAILABLE, info);
   });
 
   // Update error
   autoUpdater.on('error', (err) => {
     log.error('Update error:', err);
-    window.webContents.send('update-error', err.message);
+    window.webContents.send(IPC_CHANNELS.UPDATE_ERROR, err.message);
   });
 
   // Download progress
   autoUpdater.on('download-progress', (progressObj) => {
-    window.webContents.send('update-download-progress', progressObj);
+    window.webContents.send(IPC_CHANNELS.UPDATE_DOWNLOAD_PROGRESS, progressObj);
   });
 
   // Update downloaded
   autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded:', info);
-    window.webContents.send('update-downloaded', info);
+    window.webContents.send(IPC_CHANNELS.UPDATE_DOWNLOADED, info);
   });
 }
 
@@ -107,7 +107,11 @@ app.whenReady().then(() => {
 
   // Initialize auto-updater
   if (mainWindow) {
-    setupAutoUpdater(mainWindow);
+    mainWindow.webContents.on('did-finish-load', () => {
+      if (mainWindow) {
+        setupAutoUpdater(mainWindow);
+      }
+    });
 
     // Check for updates on app start (after 3 seconds delay)
     setTimeout(() => {
@@ -178,7 +182,8 @@ function setupIpcHandlers() {
     async (_event, filePath: string, selectedSheets?: string[]) => {
       try {
         // Read locale from env variable (for development/testing) or electron-store
-        const locale = (process.env.LOCALE as 'en' | 'de') || (store.get('language', 'en') as 'en' | 'de');
+        const locale =
+          (process.env.LOCALE as 'en' | 'de') || (store.get('language', 'en') as 'en' | 'de');
         // Pass locale to readSpreadsheet
         return readSpreadsheet(filePath, selectedSheets, locale);
       } catch (error) {
