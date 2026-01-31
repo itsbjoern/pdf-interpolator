@@ -30,7 +30,7 @@ export async function loadPDF(filePath: string): Promise<PDFDocument> {
 export async function savePDF(pdfDoc: PDFDocument, outputPath: string): Promise<void> {
   try {
     const { writeFile } = await import('fs/promises');
-    const pdfBytes = await pdfDoc.save({ useObjectStreams: true });
+    const pdfBytes = await pdfDoc.save();
     await writeFile(outputPath, pdfBytes);
   } catch (error) {
     if (error instanceof Error) {
