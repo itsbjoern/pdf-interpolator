@@ -1,8 +1,13 @@
 import * as XLSX from 'xlsx';
 import { readFileSync } from 'fs';
 import { SpreadsheetData } from '@shared/types';
+import { formatNumberForLocale } from './number-formatter';
 
-export function readSpreadsheet(filePath: string, selectedSheets?: string[]): SpreadsheetData {
+export function readSpreadsheet(
+  filePath: string,
+  selectedSheets?: string[],
+  locale: 'en' | 'de' = 'en'
+): SpreadsheetData {
   try {
     // Read the file
     const buffer = readFileSync(filePath);
@@ -57,8 +62,11 @@ export function readSpreadsheet(filePath: string, selectedSheets?: string[]): Sp
           if (value === undefined || value === null) {
             data[header].push('');
           } else {
-            const asNumber = Number(value);
-            data[header].push(isNaN(asNumber) ? String(value) : String(Math.round(asNumber)));
+            // XLSX with raw:false returns formatted strings
+            const stringValue = String(value);
+            // Convert English number format to locale-specific format
+            const formattedValue = formatNumberForLocale(stringValue, locale);
+            data[header].push(formattedValue);
           }
         }
       });
@@ -80,6 +88,10 @@ export function readSpreadsheet(filePath: string, selectedSheets?: string[]): Sp
   }
 }
 
-export function readSpreadsheetSheets(filePath: string, sheetNames: string[]): SpreadsheetData {
-  return readSpreadsheet(filePath, sheetNames);
+export function readSpreadsheetSheets(
+  filePath: string,
+  sheetNames: string[],
+  locale: 'en' | 'de' = 'en'
+): SpreadsheetData {
+  return readSpreadsheet(filePath, sheetNames, locale);
 }

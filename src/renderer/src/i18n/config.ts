@@ -12,12 +12,22 @@ const getSystemLanguage = (): 'en' | 'de' => {
   return 'en';
 };
 
+// Get language from LOCALE env variable or system detection
+const getLanguage = (): 'en' | 'de' => {
+  // Check for LOCALE environment variable (exposed through preload)
+  if (window.electron?.env?.LOCALE) {
+    return window.electron.env.LOCALE;
+  }
+  // Fall back to system language detection
+  return getSystemLanguage();
+};
+
 i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
     de: { translation: de }
   },
-  lng: getSystemLanguage(),
+  lng: getLanguage(),
   fallbackLng: 'en',
   interpolation: {
     escapeValue: false

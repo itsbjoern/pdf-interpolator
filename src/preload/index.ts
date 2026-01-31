@@ -9,6 +9,11 @@ console.log('[Preload] IPC_CHANNELS:', IPC_CHANNELS);
 
 // Expose protected methods to renderer process
 contextBridge.exposeInMainWorld('electron', {
+  // Environment variables
+  env: {
+    LOCALE: process.env.LOCALE as 'en' | 'de' | undefined
+  },
+
   // File selection
   selectSpreadsheet: () => ipcRenderer.invoke(IPC_CHANNELS.SELECT_SPREADSHEET),
   selectPDF: () => ipcRenderer.invoke(IPC_CHANNELS.SELECT_PDF),
@@ -76,6 +81,9 @@ console.log('[Preload] window.electron exposed successfully');
 declare global {
   interface Window {
     electron: {
+      env: {
+        LOCALE?: 'en' | 'de';
+      };
       selectSpreadsheet: () => Promise<string | null>;
       selectPDF: () => Promise<string | null>;
       selectOutput: () => Promise<string | null>;

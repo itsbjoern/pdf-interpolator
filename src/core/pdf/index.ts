@@ -12,9 +12,10 @@ import {
   decodePDFRawStream,
   PDFRawStream
 } from 'pdf-lib';
-import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning } from '@shared/types';
+import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning, AppSettings } from '@shared/types';
 import { readSpreadsheet } from '@core/spreadsheet/reader';
 import { loadPDF, savePDF, getPageCount } from './loader';
+import Store from 'electron-store';
 import { parseContentStreamWithPositions } from './content-stream-parser';
 import { extractFonts, parseFontInfo } from './font-handler';
 import { extractTextFromBlock } from './text-decoder';
@@ -82,9 +83,15 @@ export async function processPDF(
 
     // Phase 2: Load spreadsheet data
     reportProgress('LOAD_SPREADSHEET', 0, 'Reading spreadsheet data...');
+
+    // Read locale from env variable (for development/testing) or electron-store
+    const store = new Store<AppSettings>({ defaults: { language: 'en' } });
+    const locale = (process.env.LOCALE as 'en' | 'de') || (store.get('language', 'en') as 'en' | 'de');
+
     const spreadsheetData = readSpreadsheet(
       spreadsheetPath,
-      mappings.map((m) => m.sheetName)
+      mappings.map((m) => m.sheetName),
+      locale
     );
     reportProgress('LOAD_SPREADSHEET', 1, 'Spreadsheet loaded');
 

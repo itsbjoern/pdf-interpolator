@@ -1,4 +1,8 @@
 {
+  "numberFormat": {
+    "thousandsSeparator": ",",
+    "decimalSeparator": "."
+  },
   "steps": {
     "selectSpreadsheet": "Select Spreadsheet",
     "setupMappings": "Set Up Mappings",

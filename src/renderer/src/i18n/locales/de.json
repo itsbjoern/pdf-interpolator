@@ -1,4 +1,8 @@
 {
+  "numberFormat": {
+    "thousandsSeparator": ".",
+    "decimalSeparator": ","
+  },
   "steps": {
     "selectSpreadsheet": "Tabelle auswählen",
     "setupMappings": "Zuordnungen einrichten",

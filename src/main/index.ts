@@ -177,7 +177,10 @@ function setupIpcHandlers() {
     IPC_CHANNELS.READ_SPREADSHEET,
     async (_event, filePath: string, selectedSheets?: string[]) => {
       try {
-        return readSpreadsheet(filePath, selectedSheets);
+        // Read locale from env variable (for development/testing) or electron-store
+        const locale = (process.env.LOCALE as 'en' | 'de') || (store.get('language', 'en') as 'en' | 'de');
+        // Pass locale to readSpreadsheet
+        return readSpreadsheet(filePath, selectedSheets, locale);
       } catch (error) {
         throw new Error(error instanceof Error ? error.message : String(error));
       }
