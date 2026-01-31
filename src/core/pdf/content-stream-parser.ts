@@ -1,6 +1,6 @@
 // Content stream parser for PDF operations
 
-import { PDFOperation, PDFValue, ParsedContentStream, TextBlock } from './types';
+import { PDFOperation, PDFValue, ParsedContentStream, TextBlock, PDFDict } from './types';
 import { ContentStreamParseError } from './error-handler';
 
 /**
@@ -209,8 +209,79 @@ function parseTokens(tokens: TokenWithPos[]): PDFOperation[] {
       continue;
     }
 
-    // Skip closing brackets and dict markers (we don't parse dicts in content streams)
-    if (token === ']' || token === '<<' || token === '>>') {
+    // Dictionary
+    if (token === '<<') {
+      const dict: PDFDict = {};
+      const dictStartPos = startPos;
+      i++;
+
+      while (i < tokens.length && tokens[i].token !== '>>') {
+        // Parse key (should be a name like /ActualText)
+        const keyToken = tokens[i].token;
+        if (!keyToken.startsWith('/')) {
+          console.warn(`[Content Parser] Dictionary key "${keyToken}" doesn't start with /`);
+          i++;
+          continue;
+        }
+
+        const key = keyToken; // Keep the / prefix
+        i++;
+
+        if (i >= tokens.length || tokens[i].token === '>>') {
+          console.warn(`[Content Parser] Dictionary key "${key}" has no value`);
+          break;
+        }
+
+        // Parse value (can be any PDFValue including nested arrays/dicts)
+        let value: PDFValue | null = null;
+
+        if (tokens[i].token === '[') {
+          // Array value
+          const nestedArray: PDFValue[] = [];
+          i++;
+          while (i < tokens.length && tokens[i].token !== ']') {
+            const arrValue = parseValue(tokens[i].token);
+            if (arrValue !== null) {
+              nestedArray.push(arrValue);
+            }
+            i++;
+          }
+          value = nestedArray;
+          i++; // Skip ]
+        } else if (tokens[i].token === '<<') {
+          // Nested dictionary - we'll handle this recursively if needed
+          // For now, skip nested dictionaries (rare in content streams)
+          console.warn('[Content Parser] Nested dictionaries not fully supported yet');
+          let depth = 1;
+          i++;
+          while (i < tokens.length && depth > 0) {
+            if (tokens[i].token === '<<') depth++;
+            if (tokens[i].token === '>>') depth--;
+            i++;
+          }
+          continue;
+        } else {
+          // Simple value (name, string, number, etc.)
+          value = parseValue(tokens[i].token);
+          i++;
+        }
+
+        if (value !== null) {
+          dict[key] = value;
+        }
+      }
+
+      // Track start of operands if this is the first operand
+      if (operandStartPos === null) {
+        operandStartPos = dictStartPos;
+      }
+
+      stack.push(dict);
+      continue;
+    }
+
+    // Skip closing markers (handled above)
+    if (token === ']' || token === '>>') {
       continue;
     }
 

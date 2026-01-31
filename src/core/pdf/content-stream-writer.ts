@@ -139,9 +139,45 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
     return result;
   }
 
-  // Dictionary (shouldn't appear in content streams, but handle anyway)
-  else if (typeof value === 'object' && value !== null) {
-    return new Uint8Array([0x3c, 0x3c, 0x3e, 0x3e]); // <<>>
+  // Dictionary (appears in content streams for BDC marked content, etc.)
+  else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const parts: Uint8Array[] = [];
+    parts.push(new Uint8Array([0x3c, 0x3c])); // <<
+
+    const dict = value as { [key: string]: PDFValue };
+    const keys = Object.keys(dict);
+
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const val = dict[key];
+
+      // Serialize key (should already have / prefix)
+      const keyBytes = new Uint8Array(key.length);
+      for (let j = 0; j < key.length; j++) {
+        keyBytes[j] = key.charCodeAt(j);
+      }
+      parts.push(keyBytes);
+      parts.push(new Uint8Array([0x20])); // space
+
+      // Serialize value
+      parts.push(serializeValueToBytes(val));
+
+      // Add space between key-value pairs (except after last pair)
+      if (i < keys.length - 1) {
+        parts.push(new Uint8Array([0x20])); // space
+      }
+    }
+
+    parts.push(new Uint8Array([0x3e, 0x3e])); // >>
+
+    const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      result.set(part, offset);
+      offset += part.length;
+    }
+    return result;
   }
 
   // Should never happen
