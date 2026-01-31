@@ -3,6 +3,9 @@ import { AppSettings, ColumnMapping } from '@shared/types';
 declare global {
   interface Window {
     electron: {
+      env: {
+        LOCALE?: 'en' | 'de';
+      };
       selectSpreadsheet: () => Promise<string | null>;
       selectPDF: () => Promise<string | null>;
       selectOutput: () => Promise<string | null>;

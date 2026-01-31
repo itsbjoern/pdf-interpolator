@@ -13,6 +13,7 @@ import Store from 'electron-store';
 import { autoUpdater } from 'electron-updater';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getSystemLanguage } from './locale-detector';
 
 // Configure electron-updater logging
 autoUpdater.logger = log;
@@ -181,10 +182,7 @@ function setupIpcHandlers() {
     IPC_CHANNELS.READ_SPREADSHEET,
     async (_event, filePath: string, selectedSheets?: string[]) => {
       try {
-        // Read locale from env variable (for development/testing) or electron-store
-        const locale =
-          (process.env.LOCALE as 'en' | 'de') || (store.get('language', 'en') as 'en' | 'de');
-        // Pass locale to readSpreadsheet
+        const locale = (process.env.LOCALE as 'en' | 'de') || getSystemLanguage();
         return readSpreadsheet(filePath, selectedSheets, locale);
       } catch (error) {
         throw new Error(error instanceof Error ? error.message : String(error));

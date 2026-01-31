@@ -9,12 +9,14 @@ import {
   Paper,
   Divider
 } from '@mui/material';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from './store/useAppStore';
 import SpreadsheetSelector from './components/SpreadsheetSelector';
 import PDFSelector from './components/PDFSelector';
 import ProcessButton from './components/ProcessButton';
 import UpdateNotification from './components/UpdateNotification';
+import { getSystemLanguage } from './i18n/config';
 
 const theme = createTheme({
   palette: {
@@ -29,8 +31,29 @@ const theme = createTheme({
 });
 
 function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { spreadsheetData, sheetMappings, pdfPath } = useAppStore();
+
+  // Detect system language on every startup
+  useEffect(() => {
+    const initializeLanguage = async () => {
+      try {
+        // Check for LOCALE environment variable first (for development/testing)
+        if (window.electron?.env?.LOCALE) {
+          await i18n.changeLanguage(window.electron.env.LOCALE);
+          return;
+        }
+
+        // Detect system language
+        const systemLanguage = getSystemLanguage();
+        await i18n.changeLanguage(systemLanguage);
+      } catch (error) {
+        console.error('Failed to initialize language:', error);
+      }
+    };
+
+    initializeLanguage();
+  }, [i18n]);
 
   // Determine active step based on completed steps
   const getActiveStep = () => {
