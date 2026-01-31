@@ -1,11 +1,7 @@
-import { getNumberFormat } from '@shared/locale-config';
+import { getNumberFormat } from '@shared/i18n/format';
 
 /**
  * Converts English-formatted numbers to locale-specific format
- *
- * @param value - The value to format (expected to be from XLSX in English format)
- * @param locale - The target locale ('en' or 'de')
- * @returns Formatted number string or original value if not a number
  *
  * @example
  * formatNumberForLocale('1,000.50', 'de') // '1.000,50'
@@ -14,8 +10,7 @@ import { getNumberFormat } from '@shared/locale-config';
  * formatNumberForLocale('1000.50', 'de') // '1000,50'
  * formatNumberForLocale('Text, with periods.', 'de') // 'Text, with periods.' (unchanged)
  */
-export function formatNumberForLocale(value: string, locale: 'en' | 'de'): string {
-  // Early return for empty values
+export function formatNumberForLocale(value: string, locale: string): string {
   if (!value || value.trim() === '') {
     return value;
   }
@@ -55,8 +50,6 @@ export function formatNumberForLocale(value: string, locale: 'en' | 'de'): strin
 
 /**
  * Validates if a string is a valid number in the given format
- * @param numericPart - The numeric part without currency symbols
- * @param format - The number format configuration
  */
 function isValidNumber(
   numericPart: string,
@@ -69,17 +62,12 @@ function isValidNumber(
   const normalized = withoutThousands.replace(format.decimalSeparator, '.');
 
   const parsed = parseFloat(normalized);
-  return !isNaN(parsed) && isFinite(parsed);
+  return !Number.isNaN(parsed) && Number.isFinite(parsed);
 }
 
 /**
  * Converts a number from one format to another
  * - Swaps thousand and decimal separators based on source and target formats
- *
- * @param number - Number in source format (e.g., "1,000.50")
- * @param sourceFormat - Source number format configuration
- * @param targetFormat - Target number format configuration
- * @returns Number in target format (e.g., "1.000,50")
  */
 function convertNumberFormat(
   number: string,

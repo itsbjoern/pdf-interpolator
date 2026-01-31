@@ -1,17 +1,18 @@
+import type { PDFInfo, SheetMapping, SpreadsheetData } from '@shared/types';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { SpreadsheetData, SheetMapping, PDFInfo } from '@shared/types';
 
 interface AppState {
-  // Spreadsheet state
   spreadsheetPath: string | null;
   spreadsheetData: SpreadsheetData | null;
   setSpreadsheetPath: (path: string | null) => void;
   setSpreadsheetData: (data: SpreadsheetData | null) => void;
 
-  // Mapping state - one mapping per sheet
   sheetMappings: Record<string, SheetMapping>;
-  updateSheetMapping: (sheetName: string, updates: Partial<Omit<SheetMapping, 'sheetName'>>) => void;
+  updateSheetMapping: (
+    sheetName: string,
+    updates: Partial<Omit<SheetMapping, 'sheetName'>>
+  ) => void;
 
   // PDF state
   pdfPath: string | null;
@@ -37,22 +38,18 @@ interface AppState {
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
-      // Spreadsheet state
       spreadsheetPath: null,
       spreadsheetData: null,
       setSpreadsheetPath: (path) => set({ spreadsheetPath: path }),
       setSpreadsheetData: (data) => {
         set({ spreadsheetData: data });
-        // Initialize mappings for new sheets
         if (data) {
           set((state) => {
             const newMappings: Record<string, SheetMapping> = {};
             data.selectedSheets.forEach((sheetName) => {
               if (state.sheetMappings[sheetName]) {
-                // Keep existing mapping
                 newMappings[sheetName] = state.sheetMappings[sheetName];
               } else {
-                // Create new empty mapping
                 newMappings[sheetName] = {
                   sheetName,
                   sourceColumn: '',
@@ -65,7 +62,6 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      // Mapping state - one mapping per sheet
       sheetMappings: {},
       updateSheetMapping: (sheetName, updates) =>
         set((state) => ({
@@ -79,24 +75,20 @@ export const useAppStore = create<AppState>()(
           }
         })),
 
-      // PDF state
       pdfPath: null,
       pdfInfo: null,
       setPdfPath: (path) => set({ pdfPath: path }),
       setPdfInfo: (info) => set({ pdfInfo: info }),
 
-      // Output state
       outputPath: null,
       setOutputPath: (path) => set({ outputPath: path }),
 
-      // Processing state
       isProcessing: false,
       progress: 0,
       progressMessage: '',
       setProcessing: (isProcessing) => set({ isProcessing }),
       setProgress: (progress, message) => set({ progress, progressMessage: message }),
 
-      // Reset
       reset: () =>
         set({
           spreadsheetPath: null,

@@ -1,24 +1,15 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import en from './locales/en.json';
-import de from './locales/de.json';
+import { I18N_RESOURCES } from '@/shared/i18n/resources';
 
-// Detect system language from browser
-export const getSystemLanguage = (): 'en' | 'de' => {
+export const getSystemLanguage = (): string => {
   const lang = navigator.language.toLowerCase();
-  if (lang.startsWith('de')) {
-    return 'de';
-  }
-  return 'en';
+  return lang.split('-')[0];
 };
 
-// Initialize with English as default - will be updated in App.tsx on startup
 i18n.use(initReactI18next).init({
-  resources: {
-    en: { translation: en },
-    de: { translation: de }
-  },
-  lng: 'en', // Default - will be updated by App.tsx to match system language
+  resources: I18N_RESOURCES,
+  lng: 'en',
   fallbackLng: 'en',
   interpolation: {
     escapeValue: false

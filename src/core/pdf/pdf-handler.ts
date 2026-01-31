@@ -1,7 +1,5 @@
-// PDF loading using pdf-lib
-
+import { readFile, writeFile } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
-import { readFile } from 'fs/promises';
 import { PDFLoadError } from './error-handler';
 
 /**
@@ -29,7 +27,6 @@ export async function loadPDF(filePath: string): Promise<PDFDocument> {
  */
 export async function savePDF(pdfDoc: PDFDocument, outputPath: string): Promise<void> {
   try {
-    const { writeFile } = await import('fs/promises');
     const pdfBytes = await pdfDoc.save();
     await writeFile(outputPath, pdfBytes);
   } catch (error) {
@@ -38,11 +35,4 @@ export async function savePDF(pdfDoc: PDFDocument, outputPath: string): Promise<
     }
     throw new PDFLoadError('Failed to save PDF: Unknown error', outputPath);
   }
-}
-
-/**
- * Get page count from PDF document
- */
-export function getPageCount(pdfDoc: PDFDocument): number {
-  return pdfDoc.getPageCount();
 }

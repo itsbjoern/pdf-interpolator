@@ -1,4 +1,35 @@
-// Shared types used across main and renderer processes
+import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
+
+export interface ElectronEnvironment {
+  env: {
+    LOCALE?: 'en' | 'de';
+  };
+  selectSpreadsheet: () => Promise<string | null>;
+  selectPDF: () => Promise<string | null>;
+  selectOutput: () => Promise<string | null>;
+  readSpreadsheet: (filePath: string, selectedSheets?: string[]) => Promise<SpreadsheetData>;
+  processPDF: (
+    pdfPath: string,
+    spreadsheetPath: string,
+    mappings: SheetMapping[],
+    outputPath: string
+  ) => Promise<ProcessResult>;
+  onProcessProgress: (callback: (progress: number, message: string) => void) => void;
+  getSettings: () => Promise<AppSettings>;
+  setSettings: (settings: Partial<AppSettings>) => Promise<AppSettings>;
+  checkForUpdates: () => Promise<{
+    updateInfo: UpdateInfo;
+    available: boolean;
+  }>;
+  downloadUpdate: () => Promise<{ success: boolean }>;
+  installUpdate: () => Promise<void>;
+  onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void;
+  onUpdateNotAvailable: (callback: (info: UpdateInfo) => void) => void;
+  onUpdateError: (callback: (error: string) => void) => void;
+  onUpdateDownloadProgress: (callback: (progress: ProgressInfo) => void) => void;
+  onUpdateDownloaded: (callback: (info: UpdateDownloadedEvent) => void) => void;
+  removeUpdateListeners: () => void;
+}
 
 export interface SpreadsheetData {
   fileName: string;
@@ -53,5 +84,4 @@ export interface AppSettings {
   lastSpreadsheetPath?: string;
   lastPDFPath?: string;
   lastOutputPath?: string;
-  language: 'en' | 'de';
 }

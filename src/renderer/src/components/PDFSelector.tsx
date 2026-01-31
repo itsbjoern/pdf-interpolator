@@ -1,8 +1,8 @@
-import { Box, Button, Typography, Alert, ButtonGroup } from '@mui/material';
-import { PictureAsPdf as PictureAsPdfIcon, Close as CloseIcon } from '@mui/icons-material';
+import { Close as CloseIcon, PictureAsPdf as PictureAsPdfIcon } from '@mui/icons-material';
+import { Alert, Box, Button, ButtonGroup, Typography } from '@mui/material';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
-import { useState } from 'react';
 
 export default function PDFSelector() {
   const { t } = useTranslation();

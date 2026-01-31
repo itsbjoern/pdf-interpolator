@@ -1,6 +1,4 @@
-// PDF-specific types for text replacement engine
-
-import type { PDFStream, PDFDict as PDFLibDict, PDFPage } from 'pdf-lib';
+import type { PDFDict as PDFLibDict, PDFPage, PDFStream } from 'pdf-lib';
 import type { FontRegistry } from './font-registry';
 
 /**
@@ -28,7 +26,12 @@ export interface PDFOperation {
 /**
  * Font encoding type
  */
-export type FontEncoding = 'WinAnsiEncoding' | 'MacRomanEncoding' | 'Identity-H' | 'StandardEncoding' | 'Custom';
+export type FontEncoding =
+  | 'WinAnsiEncoding'
+  | 'MacRomanEncoding'
+  | 'Identity-H'
+  | 'StandardEncoding'
+  | 'Custom';
 
 /**
  * Font information including encoding
@@ -74,16 +77,16 @@ export type ProgressPhase = 'LOAD_PDF' | 'LOAD_SPREADSHEET' | 'PROCESS_PAGES' | 
  * Encoded text segment with font information
  */
 export interface EncodedSegment {
-  bytes: Uint8Array;  // Encoded bytes
-  font: FontInfo;     // Font used for this segment
+  bytes: Uint8Array; // Encoded bytes
+  font: FontInfo; // Font used for this segment
 }
 
 /**
  * Result of encoding text with cross-font fallback
  */
 export interface EncodedText {
-  segments: EncodedSegment[];  // May have multiple segments if fonts switched
-  success: boolean;            // Whether encoding succeeded
+  segments: EncodedSegment[]; // May have multiple segments if fonts switched
+  success: boolean; // Whether encoding succeeded
   missingCharacters?: string[]; // Characters that couldn't be encoded
 }
 
@@ -92,15 +95,15 @@ export interface EncodedText {
  * This enables surgical replacement - only modified blocks are rebuilt
  */
 export interface TextBlock {
-  btIndex: number;           // Index of BT operation in operations array
-  etIndex: number;           // Index of ET operation in operations array
-  startBytePos: number;      // Start position in original stream bytes
-  endBytePos: number;        // End position in original stream bytes
+  btIndex: number; // Index of BT operation in operations array
+  etIndex: number; // Index of ET operation in operations array
+  startBytePos: number; // Start position in original stream bytes
+  endBytePos: number; // End position in original stream bytes
   operations: PDFOperation[]; // Operations within this block (BT...ET)
   fonts: Map<string, FontInfo>; // Fonts used in this block
   textElements: TextElement[]; // Decoded text in this block
-  modified: boolean;         // Has this block been modified?
-  currentFontSize: number;   // Track font size for Tf operator injection
+  modified: boolean; // Has this block been modified?
+  currentFontSize: number; // Track font size for Tf operator injection
   operationReplacements?: Map<number, PDFOperation[]>; // Index → replacement operations
 }
 
@@ -109,18 +112,18 @@ export interface TextBlock {
  * Preserves original bytes and tracks text blocks for minimal modifications
  */
 export interface ParsedContentStream {
-  originalBytes: Uint8Array;  // Original stream bytes (PRESERVED)
+  originalBytes: Uint8Array; // Original stream bytes (PRESERVED)
   allOperations: PDFOperation[]; // All operations (including graphics)
-  textBlocks: TextBlock[];    // Only the BT/ET blocks
+  textBlocks: TextBlock[]; // Only the BT/ET blocks
 }
 
 /**
  * Reference to an XObject Form found in content stream
  */
 export interface XObjectReference {
-  name: string;                     // XObject name from Do operator (e.g., "Fm1")
-  xobjectStream: PDFStream | null;  // Resolved XObject stream
-  resources: PDFLibDict | null;     // XObject's Resources dictionary
+  name: string; // XObject name from Do operator (e.g., "Fm1")
+  xobjectStream: PDFStream | null; // Resolved XObject stream
+  resources: PDFLibDict | null; // XObject's Resources dictionary
 }
 
 /**
@@ -129,8 +132,8 @@ export interface XObjectReference {
 export interface XObjectModifications {
   modifications: Map<PDFStream, Uint8Array>; // XObject stream → patched bytes
   characterIssues: Map<string, Set<string>>; // Accumulated character issues
-  matchCount: number;                        // Total matches in XObjects
-  replacementCount: number;                  // Total successful replacements in XObjects
+  matchCount: number; // Total matches in XObjects
+  replacementCount: number; // Total successful replacements in XObjects
 }
 
 /**
@@ -138,10 +141,10 @@ export interface XObjectModifications {
  */
 export interface XObjectProcessingContext {
   replacements: Array<{ source: string; target: string }>;
-  visitedXObjects: Set<PDFStream>;  // Track visited XObject streams
-  depth: number;                    // Current recursion depth
-  maxDepth: number;                 // Maximum allowed depth (default: 10)
-  pageIndex: number;                // For logging
-  pageFontRegistry: FontRegistry;   // FontRegistry instance
-  page: PDFPage;                    // PDFPage instance (for nested XObject resolution)
+  visitedXObjects: Set<PDFStream>; // Track visited XObject streams
+  depth: number; // Current recursion depth
+  maxDepth: number; // Maximum allowed depth (default: 10)
+  pageIndex: number; // For logging
+  pageFontRegistry: FontRegistry; // FontRegistry instance
+  page: PDFPage; // PDFPage instance (for nested XObject resolution)
 }

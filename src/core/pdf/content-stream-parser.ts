@@ -1,7 +1,5 @@
-// Content stream parser for PDF operations
-
-import { PDFOperation, PDFValue, ParsedContentStream, TextBlock, PDFDict } from './types';
 import { ContentStreamParseError } from './error-handler';
+import type { ParsedContentStream, PDFDict, PDFOperation, PDFValue, TextBlock } from './types';
 
 /**
  * Parse a PDF content stream with position tracking for surgical editing
@@ -18,13 +16,12 @@ export function parseContentStreamWithPositions(
 
     // Identify BT/ET blocks and track their positions
     const textBlocks: TextBlock[] = [];
-    let currentBlock: Partial<TextBlock> | null = null;
+    let currentBlock: (Partial<TextBlock> & { operations: PDFOperation[] }) | null = null;
 
     for (let i = 0; i < allOperations.length; i++) {
       const op = allOperations[i];
 
       if (op.operator === 'BT') {
-        // Begin text block
         currentBlock = {
           btIndex: i,
           startBytePos: op.startIndex,
@@ -38,16 +35,13 @@ export function parseContentStreamWithPositions(
         // End text block
         currentBlock.etIndex = i;
         currentBlock.endBytePos = op.endIndex;
-        currentBlock.operations!.push(op);
+        currentBlock.operations.push(op);
         textBlocks.push(currentBlock as TextBlock);
         currentBlock = null;
       } else if (currentBlock) {
-        // Inside text block, add to current block
-        currentBlock.operations!.push(op);
+        currentBlock.operations.push(op);
       }
     }
-
-    console.log(`[Content Parser] Found ${textBlocks.length} BT/ET text blocks`);
 
     return {
       originalBytes: streamBytes,
@@ -162,6 +156,7 @@ function tokenize(content: string): TokenWithPos[] {
 
     // Regular token (number, name, operator)
     let token = '';
+    // biome-ignore lint/complexity/noUselessEscapeInRegex: More obvious if escaped
     while (i < content.length && !/[\s\[\]<>()]/.test(content[i])) {
       token += content[i];
       i++;

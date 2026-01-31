@@ -1,13 +1,13 @@
-import { Box, Button, Typography, LinearProgress, Paper, ButtonGroup } from '@mui/material';
 import {
+  Close as CloseIcon,
   PlayArrow as PlayArrowIcon,
-  Save as SaveIcon,
-  Close as CloseIcon
+  Save as SaveIcon
 } from '@mui/icons-material';
+import { Box, Button, ButtonGroup, LinearProgress, Paper, Typography } from '@mui/material';
+import type { ProcessResult } from '@shared/types';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
-import { useState, useEffect } from 'react';
-import type { ProcessResult } from '@shared/types';
 import ResultsDialog from './ResultsDialog';
 
 export default function ProcessButton() {
@@ -29,20 +29,15 @@ export default function ProcessButton() {
   const [result, setResult] = useState<ProcessResult | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Set up progress listener
   useEffect(() => {
     window.electron.onProcessProgress((progress, message) => {
       setProgress(progress, message);
     });
   }, [setProgress]);
 
-  // Check if all selected sheets have complete mappings
-  const allMappingsComplete =
-    spreadsheetData &&
-    spreadsheetData.selectedSheets.every(
-      (sheetName) =>
-        sheetMappings[sheetName]?.sourceColumn && sheetMappings[sheetName]?.targetColumn
-    );
+  const allMappingsComplete = spreadsheetData?.selectedSheets.every(
+    (sheetName) => sheetMappings[sheetName]?.sourceColumn && sheetMappings[sheetName]?.targetColumn
+  );
 
   const isReadyToProcess =
     spreadsheetPath && spreadsheetData && allMappingsComplete && pdfPath && outputPath;
@@ -54,7 +49,6 @@ export default function ProcessButton() {
         setOutputPath(filePath);
       }
     } catch (err) {
-      // Show error in dialog
       setResult({
         success: false,
         error: err instanceof Error ? err.message : String(err)
@@ -78,10 +72,7 @@ export default function ProcessButton() {
       setResult(null);
       setProgress(0, t('process.processing'));
 
-      // Convert sheetMappings to array
       const mappingsArray = Object.values(sheetMappings);
-
-      // Call actual PDF processing
       const processResult = await window.electron.processPDF(
         pdfPath,
         spreadsheetPath,
@@ -89,11 +80,9 @@ export default function ProcessButton() {
         outputPath
       );
 
-      // Store result and open dialog
       setResult(processResult);
       setDialogOpen(true);
 
-      // Update progress message
       if (processResult.success) {
         const failedCount =
           (processResult.totalMatches || 0) - (processResult.totalReplacements || 0);
@@ -190,7 +179,6 @@ export default function ProcessButton() {
         </Paper>
       )}
 
-      {/* Results Dialog */}
       <ResultsDialog open={dialogOpen} onClose={handleCloseDialog} result={result} />
     </Box>
   );

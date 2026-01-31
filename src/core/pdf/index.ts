@@ -1,36 +1,42 @@
 // Main PDF processing entry point
 
 import { deflateSync } from 'node:zlib';
-import {
-  PDFPage,
-  PDFStream,
-  PDFArray,
-  PDFRef,
-  PDFName,
-  PDFDict as PDFLibDict,
-  PDFNumber,
-  decodePDFRawStream,
-  PDFRawStream
-} from 'pdf-lib';
-import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning, AppSettings } from '@shared/types';
 import { readSpreadsheet } from '@core/spreadsheet/reader';
-import { loadPDF, savePDF, getPageCount } from './loader';
-import Store from 'electron-store';
+import { getSystemLanguage } from '@shared/i18n/format';
+import type {
+  ProcessingWarning,
+  ProcessResult,
+  ReplacementStats,
+  SheetMapping
+} from '@shared/types';
+import {
+  decodePDFRawStream,
+  PDFArray,
+  PDFDict as PDFLibDict,
+  PDFName,
+  PDFNumber,
+  type PDFPage,
+  type PDFRawStream,
+  PDFRef,
+  PDFStream
+} from 'pdf-lib';
 import { parseContentStreamWithPositions } from './content-stream-parser';
-import { extractFonts, parseFontInfo } from './font-handler';
-import { extractTextFromBlock } from './text-decoder';
-import { performReplacementsOnBlock } from './text-replacer';
 import { patchContentStream } from './content-stream-writer';
 import { formatErrorForUser } from './error-handler';
-import {
+import { extractFonts, parseFontInfo } from './font-handler';
+import { FontRegistry } from './font-registry';
+import { loadPDF, savePDF } from './pdf-handler';
+import { extractTextFromBlock } from './text-decoder';
+import { performReplacementsOnBlock } from './text-replacer';
+import type {
+  FontInfo,
+  ParsedContentStream,
   ProgressCallback,
   ProgressPhase,
-  XObjectReference,
   XObjectModifications,
-  XObjectProcessingContext
+  XObjectProcessingContext,
+  XObjectReference
 } from './types';
-import type { ParsedContentStream } from './types';
-import { FontRegistry } from './font-registry';
 
 /**
  * One content stream to process (single stream or one element of Contents array).
@@ -40,7 +46,7 @@ interface ContentStreamEntry {
   stream: PDFStream;
   bytes: Uint8Array;
   ref: PDFRef | null;
-  parsed?: ParsedContentStream;
+  parsed: ParsedContentStream;
   modified?: boolean;
   patchedBytes?: Uint8Array;
 }
@@ -66,7 +72,6 @@ export async function processPDF(
   onProgress?: ProgressCallback
 ): Promise<ProcessResult> {
   try {
-    // Helper to report progress
     const reportProgress = (phase: ProgressPhase, subProgress: number, message: string) => {
       if (!onProgress) return;
 
@@ -78,15 +83,13 @@ export async function processPDF(
     // Phase 1: Load PDF
     reportProgress('LOAD_PDF', 0, 'Loading PDF document...');
     const pdfDoc = await loadPDF(pdfPath);
-    const pageCount = getPageCount(pdfDoc);
+    const pageCount = pdfDoc.getPageCount();
     reportProgress('LOAD_PDF', 1, `PDF loaded: ${pageCount} pages`);
 
     // Phase 2: Load spreadsheet data
     reportProgress('LOAD_SPREADSHEET', 0, 'Reading spreadsheet data...');
 
-    // Read locale from env variable (for development/testing) or electron-store
-    const store = new Store<AppSettings>({ defaults: { language: 'en' } });
-    const locale = (process.env.LOCALE as 'en' | 'de') || (store.get('language', 'en') as 'en' | 'de');
+    const locale = process.env.LOCALE || getSystemLanguage();
 
     const spreadsheetData = readSpreadsheet(
       spreadsheetPath,
@@ -95,60 +98,41 @@ export async function processPDF(
     );
     reportProgress('LOAD_SPREADSHEET', 1, 'Spreadsheet loaded');
 
-    console.log('[PDF Processor] Spreadsheet data loaded:', {
-      sheets: Object.keys(spreadsheetData.data)
-    });
-
-    // Build replacement entries for each mapping
-    const replacementMap = new Map<string, Map<string, number>>(); // mappingId -> (source -> replacementCount)
-    const matchMap = new Map<string, Map<string, number>>(); // mappingId -> (source -> matchCount)
+    const replacementMap = new Map<string, Map<string, number>>();
+    const matchMap = new Map<string, Map<string, number>>();
     const allWarnings: ProcessingWarning[] = [];
 
     const allReplacements = mappings.flatMap((mapping) => {
       const sourceData = spreadsheetData.data[mapping.sheetName][mapping.sourceColumn] || [];
       const targetData = spreadsheetData.data[mapping.sheetName][mapping.targetColumn] || [];
 
-      console.log(`[PDF Processor] Processing mapping: ${mapping.sheetName}`, {
-        sourceColumn: mapping.sourceColumn,
-        targetColumn: mapping.targetColumn,
-        sourceDataLength: sourceData.length,
-        targetDataLength: targetData.length,
-        sourceDataSample: sourceData.slice(0, 3),
-        targetDataSample: targetData.slice(0, 3)
-      });
-
-      // Build replacement entries
-      const entries: Array<{ source: string; target: string; mappingId: string }> = [];
+      const entries: Array<{
+        source: string;
+        target: string;
+        mappingId: string;
+      }> = [];
 
       // For each row, create a replacement: find targetColumn value, replace with sourceColumn value
       const maxLength = Math.max(sourceData.length, targetData.length);
       for (let i = 0; i < maxLength; i++) {
-        const sourceValue = sourceData[i];
-        const targetValue = targetData[i];
+        const sourceValue = sourceData[i]?.trim();
+        const targetValue = targetData[i]?.trim();
 
-        if (targetValue && targetValue.trim() && sourceValue && sourceValue.trim()) {
+        if (targetValue && sourceValue) {
           entries.push({
-            source: sourceValue.trim(), // What to find in PDF
-            target: targetValue.trim(), // What to replace with
+            source: sourceValue, // What to find in PDF
+            target: targetValue, // What to replace with
             mappingId: `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`
           });
         }
       }
 
-      console.log(
-        `[PDF Processor] Built ${entries.length} replacement entries for mapping ${mapping.sheetName}`
-      );
-      console.log('[PDF Processor] Sample replacements:', entries.slice(0, 3));
-
-      // Initialize replacement and match count tracking
       const mappingId = `${mapping.sheetName}:${mapping.sourceColumn}→${mapping.targetColumn}`;
       replacementMap.set(mappingId, new Map());
       matchMap.set(mappingId, new Map());
 
       return entries;
     });
-
-    console.log(`[PDF Processor] Total replacement entries: ${allReplacements.length}`);
 
     // Phase 3: Process pages
     const pages = pdfDoc.getPages();
@@ -165,18 +149,10 @@ export async function processPDF(
       );
 
       try {
-        console.log(`[PDF Processor] Processing page ${pageIndex + 1}/${pages.length}`);
-
-        // Process this page
         const pageReplacements = await processPage(page, allReplacements, pageIndex);
         totalReplacements += pageReplacements.totalCount;
         totalMatches += pageReplacements.totalMatches;
 
-        console.log(
-          `[PDF Processor] Page ${pageIndex + 1} completed: ${pageReplacements.totalCount} replacements from ${pageReplacements.totalMatches} matches`
-        );
-
-        // Update replacement and match counts
         for (const [mappingId, counts] of pageReplacements.countsByMapping) {
           const mappingCounts = replacementMap.get(mappingId);
           if (mappingCounts) {
@@ -195,7 +171,6 @@ export async function processPDF(
           }
         }
 
-        // Collect character issues for this page
         if (pageReplacements.characterIssues.size > 0) {
           const characterIssues: { character: string; strings: string[] }[] = [];
           for (const [char, strings] of pageReplacements.characterIssues) {
@@ -211,7 +186,6 @@ export async function processPDF(
         }
       } catch (error) {
         console.warn(`Error processing page ${pageIndex + 1}:`, error);
-        // Continue with next page
       }
     }
 
@@ -293,7 +267,6 @@ async function processPage(
   const countsByMapping = new Map<string, Map<string, number>>();
   const matchesByMapping = new Map<string, Map<string, number>>();
 
-  // Initialize counters
   for (const replacement of replacements) {
     if (!countsByMapping.has(replacement.mappingId)) {
       countsByMapping.set(replacement.mappingId, new Map());
@@ -301,7 +274,6 @@ async function processPage(
     }
   }
 
-  // Get content stream
   const contentStream = page.node.Contents();
   if (!contentStream) {
     console.log(`[PDF Processor] Page ${pageIndex + 1}: No content stream found`);
@@ -314,12 +286,7 @@ async function processPage(
     };
   }
 
-  console.log(
-    `[PDF Processor] Page ${pageIndex + 1}: Content stream type:`,
-    contentStream.constructor.name
-  );
-
-  const streamEntries = await getContentStreams(contentStream, page);
+  const streamEntries = await getContentStreams(contentStream, page, pageIndex);
   if (!streamEntries || streamEntries.length === 0) {
     console.warn(`[PDF Processor] Page ${pageIndex + 1}: No content streams extracted`);
     return {
@@ -331,16 +298,7 @@ async function processPage(
     };
   }
 
-  console.log(
-    `[PDF Processor] Page ${pageIndex + 1}: ${streamEntries.length} content stream(s) to process`
-  );
-
   const fontMap = await extractFonts(page);
-  console.log(
-    `[PDF Processor] Page ${pageIndex + 1}: Found ${fontMap.size} fonts`,
-    Array.from(fontMap.keys())
-  );
-
   const fontRegistry = new FontRegistry();
   for (const font of fontMap.values()) {
     fontRegistry.addFont(font);
@@ -353,35 +311,20 @@ async function processPage(
   let totalPageMatches = 0;
   const pageCharacterIssues = new Map<string, Set<string>>();
 
-  // Parse all content streams first (before text processing)
-  for (const entry of streamEntries) {
-    const parsed = parseContentStreamWithPositions(entry.bytes, pageIndex);
-    entry.parsed = parsed;
-  }
-
-  // Extract XObject references from all streams
   const xobjectRefs: XObjectReference[] = [];
   for (const entry of streamEntries) {
-    const refs = extractXObjectReferences(entry.parsed!, page);
+    const refs = extractXObjectReferences(entry.parsed, page);
     xobjectRefs.push(...refs);
   }
 
-  console.log(`[PDF Processor] Page ${pageIndex + 1}: Found ${xobjectRefs.length} XObject Form(s)`);
-
   for (let streamIndex = 0; streamIndex < streamEntries.length; streamIndex++) {
     const entry = streamEntries[streamIndex];
-    const parsed = entry.parsed!;
+    const parsed = entry.parsed;
 
     for (const block of parsed.textBlocks) {
       extractTextFromBlock(block, fontMap);
-      const result = performReplacementsOnBlock(block, blockReplacements, fontMap, fontRegistry);
+      const result = performReplacementsOnBlock(block, blockReplacements, fontRegistry);
       totalPageMatches += result.matchCount;
-
-      if (result.modified && result.count > 0) {
-        console.log(
-          `[PDF Processor] Page ${pageIndex + 1} stream ${streamIndex + 1}: Block modified with ${result.count} replacements from ${result.matchCount} matches`
-        );
-      }
 
       if (result.characterIssues.size > 0) {
         for (const [char, strings] of result.characterIssues) {
@@ -415,10 +358,6 @@ async function processPage(
   const xobjectModifications = new Map<PDFStream, Uint8Array>();
 
   if (xobjectRefs.length > 0) {
-    console.log(
-      `[PDF Processor] Page ${pageIndex + 1}: Processing ${xobjectRefs.length} XObject(s)`
-    );
-
     const xobjectContext: XObjectProcessingContext = {
       replacements: blockReplacements,
       visitedXObjects: new Set(),
@@ -460,16 +399,12 @@ async function processPage(
     }
 
     totalPageMatches += xobjectMatchCount;
-
-    console.log(
-      `[PDF Processor] Page ${pageIndex + 1}: XObject processing complete - ` +
-        `${xobjectReplacementCount} replacements from ${xobjectMatchCount} matches`
-    );
   }
 
   let totalCount = 0;
   for (const entry of streamEntries) {
-    const parsed = entry.parsed!;
+    const parsed = entry.parsed;
+
     for (const block of parsed.textBlocks) {
       for (const element of block.textElements) {
         for (const replacement of replacements) {
@@ -503,7 +438,6 @@ async function processPage(
   if (anyModified) {
     try {
       await updatePageContentStream(contentStream, streamEntries);
-      console.log('[PDF Processor] Successfully updated page content stream(s)');
     } catch (error) {
       console.error('[PDF Processor] Failed to update content stream(s):', error);
       return {
@@ -515,20 +449,11 @@ async function processPage(
       };
     }
   } else {
-    console.log(
-      `[PDF Processor] Page ${pageIndex + 1}: No modifications made, content stream unchanged`
-    );
   }
 
-  // Apply XObject modifications
   if (xobjectModifications.size > 0) {
-    console.log(
-      `[PDF Processor] Page ${pageIndex + 1}: Applying modifications to ${xobjectModifications.size} XObject(s)`
-    );
-
     try {
       await updateXObjectStreams(xobjectModifications);
-      console.log('[PDF Processor] Successfully updated XObject stream(s)');
     } catch (error) {
       console.error('[PDF Processor] Failed to update XObject stream(s):', error);
     }
@@ -549,13 +474,16 @@ async function processPage(
  */
 async function getContentStreams(
   contentStream: PDFStream | PDFArray,
-  page: PDFPage
+  page: PDFPage,
+  pageIndex: number
 ): Promise<ContentStreamEntry[] | null> {
   try {
     if (contentStream instanceof PDFStream) {
       const bytes = await decodeStream(contentStream);
       if (!bytes) return null;
-      return [{ stream: contentStream, bytes, ref: null }];
+
+      const parsed = parseContentStreamWithPositions(bytes, pageIndex);
+      return [{ stream: contentStream, bytes, ref: null, parsed }];
     }
     if (contentStream instanceof PDFArray) {
       const context = page.doc.context;
@@ -573,7 +501,8 @@ async function getContentStreams(
         if (stream) {
           const bytes = await decodeStream(stream);
           if (bytes) {
-            entries.push({ stream, bytes, ref });
+            const parsed = parseContentStreamWithPositions(bytes, pageIndex);
+            entries.push({ stream, bytes, ref, parsed });
           }
         }
       }
@@ -605,10 +534,7 @@ async function decodeStream(stream: PDFStream): Promise<Uint8Array | null> {
  * Extract XObject references from parsed content stream
  * Finds all "Do" operators and resolves them to XObject Form streams
  */
-function extractXObjectReferences(
-  parsed: ParsedContentStream,
-  page: PDFPage
-): XObjectReference[] {
+function extractXObjectReferences(parsed: ParsedContentStream, page: PDFPage): XObjectReference[] {
   const xobjectRefs: XObjectReference[] = [];
   const resources = page.node.Resources();
 
@@ -627,7 +553,6 @@ function extractXObjectReferences(
       const xobjectName = operation.operands[0] as string; // e.g., "/Fm1" or "Fm1"
       const cleanName = xobjectName.startsWith('/') ? xobjectName.slice(1) : xobjectName;
 
-      // Look up XObject in Resources
       const xobjectRef = xobjectDict.lookup(PDFName.of(cleanName));
       if (!xobjectRef) {
         console.warn(`[XObject] XObject "${cleanName}" not found in Resources`);
@@ -647,7 +572,6 @@ function extractXObjectReferences(
       const subtype = xobjectStream.dict.lookupMaybe(PDFName.of('Subtype'), PDFName);
       const subtypeStr = subtype?.asString() || '';
       if (!subtypeStr.includes('Form')) {
-        console.log(`[XObject] Skipping non-Form XObject "${cleanName}" (${subtypeStr})`);
         continue;
       }
 
@@ -659,8 +583,6 @@ function extractXObjectReferences(
         xobjectStream,
         resources: xobjResources || null
       });
-
-      console.log(`[XObject] Found Form XObject: "${cleanName}"`);
     }
   }
 
@@ -672,10 +594,10 @@ function extractXObjectReferences(
  * Similar to extractFonts() but works with XObject context
  */
 async function extractXObjectFonts(
-  xobjectResources: any | null,
+  xobjectResources: PDFLibDict | null,
   xobjectName: string
-): Promise<Map<string, import('./types').FontInfo>> {
-  const fontMap = new Map<string, import('./types').FontInfo>();
+): Promise<Map<string, FontInfo>> {
+  const fontMap = new Map<string, FontInfo>();
 
   if (!xobjectResources) {
     console.log(`[XObject] No resources in XObject "${xobjectName}"`);
@@ -742,9 +664,6 @@ async function processXObject(
     context.visitedXObjects.add(xobjectRef.xobjectStream);
   }
 
-  console.log(`[XObject] Processing XObject "${xobjectRef.name}" at depth ${context.depth}`);
-
-  // Decode XObject content stream
   if (!xobjectRef.xobjectStream) {
     console.warn(`[XObject] XObject "${xobjectRef.name}" has no stream`);
     return { modifications, characterIssues, matchCount, replacementCount };
@@ -756,34 +675,24 @@ async function processXObject(
     return { modifications, characterIssues, matchCount, replacementCount };
   }
 
-  // Parse content stream
   const parsed = parseContentStreamWithPositions(xobjectBytes, context.pageIndex);
-
-  // Extract fonts from XObject Resources
   const xobjectFonts = await extractXObjectFonts(xobjectRef.resources, xobjectRef.name);
-
-  // Merge XObject fonts into a scoped font registry
   const xobjectFontRegistry = new FontRegistry();
 
-  // Add page-level fonts first (for fallback)
   for (const family of context.pageFontRegistry.getFamilies().values()) {
     for (const fontInfo of family.fonts.values()) {
       xobjectFontRegistry.addFont(fontInfo);
     }
   }
 
-  // Add XObject-specific fonts (may override page fonts)
   for (const font of xobjectFonts.values()) {
     xobjectFontRegistry.addFont(font);
   }
 
-  // Check for nested XObjects (recursive call)
   const nestedXObjects = extractXObjectReferences(parsed, context.page);
 
   if (nestedXObjects.length > 0) {
-    console.log(
-      `[XObject] Found ${nestedXObjects.length} nested XObjects in "${xobjectRef.name}"`
-    );
+    console.log(`[XObject] Found ${nestedXObjects.length} nested XObjects in "${xobjectRef.name}"`);
 
     const nestedContext: XObjectProcessingContext = {
       ...context,
@@ -813,10 +722,7 @@ async function processXObject(
         matchCount += nestedMods.matchCount;
         replacementCount += nestedMods.replacementCount;
       } catch (error) {
-        console.error(
-          `[XObject] Error processing nested XObject "${nestedXObj.name}":`,
-          error
-        );
+        console.error(`[XObject] Error processing nested XObject "${nestedXObj.name}":`, error);
       }
     }
   }
@@ -825,12 +731,7 @@ async function processXObject(
   for (const block of parsed.textBlocks) {
     extractTextFromBlock(block, xobjectFonts);
 
-    const result = performReplacementsOnBlock(
-      block,
-      context.replacements,
-      xobjectFonts,
-      xobjectFontRegistry
-    );
+    const result = performReplacementsOnBlock(block, context.replacements, xobjectFontRegistry);
 
     matchCount += result.matchCount;
 
@@ -849,26 +750,15 @@ async function processXObject(
     }
   }
 
-  // Check if any modifications were made
   const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
-
   if (modifiedBlocks.length > 0) {
-    console.log(
-      `[XObject] XObject "${xobjectRef.name}": ${modifiedBlocks.length} text blocks modified`
-    );
-
-    // Patch content stream
     const patchedBytes = patchContentStream(parsed);
 
     if (patchedBytes.length === 0) {
-      console.error(
-        `[XObject] Patched stream is empty for XObject "${xobjectRef.name}", skipping`
-      );
+      console.error(`[XObject] Patched stream is empty for XObject "${xobjectRef.name}", skipping`);
     } else {
       modifications.set(xobjectRef.xobjectStream, patchedBytes);
     }
-  } else {
-    console.log(`[XObject] No modifications needed for XObject "${xobjectRef.name}"`);
   }
 
   return { modifications, characterIssues, matchCount, replacementCount };
@@ -923,18 +813,14 @@ function updateStreamInPlace(entry: ContentStreamEntry): void {
   const encodedBytes = encodeStreamWithFilter(entry.patchedBytes!, filterVal, decodeParmsVal);
   const bytesToWrite = encodedBytes ?? entry.patchedBytes!;
 
-  // Update the stream contents in place
   const rawStream = entry.stream as PDFRawStream;
   (rawStream as any).contents = bytesToWrite;
 
-  // Update the Length entry in the dictionary
   rawStream.dict.set(PDFName.of('Length'), PDFNumber.of(bytesToWrite.length));
 
-  // Ensure Filter is set correctly
   if (encodedBytes !== null) {
     rawStream.dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
   } else {
-    // Remove Filter if we're writing uncompressed
     rawStream.dict.delete(PDFName.of('Filter'));
     rawStream.dict.delete(PDFName.of('DecodeParms'));
   }
@@ -953,9 +839,6 @@ async function updatePageContentStream(
     if (!entry.modified || !entry.patchedBytes) return;
 
     updateStreamInPlace(entry);
-    console.log(
-      `[PDF Processor] Updated content stream in place with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
-    );
     return;
   }
 
@@ -964,12 +847,8 @@ async function updatePageContentStream(
       const entry = streamEntries[i];
       if (entry.modified && entry.patchedBytes) {
         updateStreamInPlace(entry);
-        console.log(
-          `[PDF Processor] Stream ${i + 1}/${streamEntries.length}: updated in place with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
-        );
       }
     }
-    console.log(`[PDF Processor] Updated ${streamEntries.filter(e => e.modified).length} of ${streamEntries.length} stream(s) in place`);
   }
 }
 
@@ -984,11 +863,14 @@ async function updateXObjectStreams(modifications: Map<PDFStream, Uint8Array>): 
       bytes: new Uint8Array(), // Not used
       ref: null,
       modified: true,
+      parsed: {
+        originalBytes: new Uint8Array(), // Not used
+        allOperations: [],
+        textBlocks: []
+      },
       patchedBytes
     };
 
     updateStreamInPlace(entry);
-
-    console.log(`[PDF Processor] Updated XObject stream with ${patchedBytes.length} bytes`);
   }
 }

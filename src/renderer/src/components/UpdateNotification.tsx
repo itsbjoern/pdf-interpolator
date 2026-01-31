@@ -1,12 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Snackbar, Alert, Button, LinearProgress, Typography, Box } from '@mui/material';
 import { Download, Update } from '@mui/icons-material';
-
-interface UpdateInfo {
-  version: string;
-  releaseDate: string;
-  releaseName?: string;
-}
+import { Alert, Box, Button, LinearProgress, Snackbar, Typography } from '@mui/material';
+import type { UpdateInfo } from 'electron-updater';
+import { useEffect, useState } from 'react';
 
 export default function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -17,8 +12,7 @@ export default function UpdateNotification() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Set up event listeners
-    window.electron.onUpdateAvailable((info: UpdateInfo) => {
+    window.electron.onUpdateAvailable((info) => {
       console.log('Update available:', info);
       setUpdateAvailable(true);
       setUpdateInfo(info);
@@ -28,17 +22,17 @@ export default function UpdateNotification() {
       console.log('No update available');
     });
 
-    window.electron.onUpdateError((err: string) => {
+    window.electron.onUpdateError((err) => {
       console.error('Update error:', err);
       setError(err);
       setDownloading(false);
     });
 
-    window.electron.onUpdateDownloadProgress((progress: any) => {
+    window.electron.onUpdateDownloadProgress((progress) => {
       setDownloadProgress(progress.percent);
     });
 
-    window.electron.onUpdateDownloaded((info: UpdateInfo) => {
+    window.electron.onUpdateDownloaded((info) => {
       console.log('Update downloaded:', info);
       setDownloading(false);
       setUpdateDownloaded(true);
@@ -71,7 +65,6 @@ export default function UpdateNotification() {
 
   return (
     <>
-      {/* Update Available Notification */}
       <Snackbar
         open={updateAvailable && !downloading && !updateDownloaded}
         anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
@@ -89,7 +82,6 @@ export default function UpdateNotification() {
         </Alert>
       </Snackbar>
 
-      {/* Downloading Progress */}
       <Snackbar open={downloading} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <Alert severity="info" icon={<Download />}>
           <Box sx={{ width: 200 }}>
@@ -101,7 +93,6 @@ export default function UpdateNotification() {
         </Alert>
       </Snackbar>
 
-      {/* Update Downloaded */}
       <Snackbar open={updateDownloaded} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <Alert
           severity="success"
@@ -117,7 +108,6 @@ export default function UpdateNotification() {
         </Alert>
       </Snackbar>
 
-      {/* Error Notification */}
       <Snackbar
         open={!!error}
         autoHideDuration={6000}

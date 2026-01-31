@@ -1,7 +1,8 @@
-// Custom error classes for PDF processing
-
 export class PDFProcessingError extends Error {
-  constructor(message: string, public context?: unknown) {
+  constructor(
+    message: string,
+    public context?: unknown
+  ) {
     super(message);
     this.name = 'PDFProcessingError';
   }
@@ -30,14 +31,18 @@ export class FontNotFoundError extends PDFProcessingError {
 
 export class CharacterNotInFontError extends PDFProcessingError {
   constructor(char: string, fontName: string) {
-    super(`Character "${char}" (U+${char.charCodeAt(0).toString(16).toUpperCase()}) not available in font ${fontName}`);
+    super(
+      `Character "${char}" (U+${char.charCodeAt(0).toString(16).toUpperCase()}) not available in font ${fontName}`
+    );
     this.name = 'CharacterNotInFontError';
   }
 }
 
 export class ContentStreamParseError extends PDFProcessingError {
   constructor(message: string, page?: number) {
-    super(`Failed to parse content stream${page !== undefined ? ` on page ${page + 1}` : ''}: ${message}`);
+    super(
+      `Failed to parse content stream${page !== undefined ? ` on page ${page + 1}` : ''}: ${message}`
+    );
     this.name = 'ContentStreamParseError';
   }
 }
@@ -55,7 +60,7 @@ export function formatErrorForUser(error: Error): string {
   }
 
   if (error instanceof CharacterNotInFontError) {
-    return 'Some replacement text contains characters not available in the PDF\'s fonts. Replacements were partially completed where possible.';
+    return "Some replacement text contains characters not available in the PDF's fonts. Replacements were partially completed where possible.";
   }
 
   if (error instanceof ContentStreamParseError) {

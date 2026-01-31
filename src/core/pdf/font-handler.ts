@@ -1,21 +1,22 @@
 // Font handling and encoding/decoding
 
 import {
-  PDFPage,
-  PDFName,
-  PDFDict as PDFLibDict,
-  PDFStream,
   decodePDFRawStream,
-  PDFRawStream
+  PDFDict as PDFLibDict,
+  PDFName,
+  type PDFObject,
+  type PDFPage,
+  type PDFRawStream,
+  PDFStream
 } from 'pdf-lib';
-import { FontInfo, FontEncoding, EncodedText, EncodedSegment } from './types';
 import {
   COMMON_GLYPH_MAP,
   MAC_ROMAN_ENCODING,
   STANDARD_ENCODING,
   WIN_ANSI_ENCODING
 } from './font-encodings';
-import { FontRegistry } from './font-registry';
+import type { FontRegistry } from './font-registry';
+import type { EncodedSegment, EncodedText, FontEncoding, FontInfo } from './types';
 
 /**
  * Extract fonts from a PDF page
@@ -37,8 +38,6 @@ export async function extractFonts(page: PDFPage): Promise<Map<string, FontInfo>
     }
 
     const fontNames = fontDict.keys();
-    console.log(`[Font Handler] Found ${fontNames.length} fonts in page resources`);
-
     for (const fontNameObj of fontNames) {
       const fontName = fontNameObj.asString();
       const fontRef = fontDict.lookup(fontNameObj);
@@ -47,9 +46,6 @@ export async function extractFonts(page: PDFPage): Promise<Map<string, FontInfo>
 
       const fontInfo = await parseFontInfo(fontName, fontRef);
       if (fontInfo) {
-        console.log(
-          `[Font Handler] Loaded font: ${fontName} -> ${fontInfo.baseFont} (${fontInfo.encoding})`
-        );
         fontMap.set(fontName, fontInfo);
       }
     }
@@ -63,13 +59,16 @@ export async function extractFonts(page: PDFPage): Promise<Map<string, FontInfo>
 /**
  * Parse font information from font dictionary
  */
-export async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontInfo | null> {
+export async function parseFontInfo(
+  fontName: string,
+  fontRef: PDFObject
+): Promise<FontInfo | null> {
   try {
     let fontDict: PDFLibDict | null = null;
 
     // Handle indirect references
     if (fontRef && typeof fontRef === 'object' && 'lookup' in fontRef) {
-      const resolved = (fontRef as any).lookup ? (fontRef as any) : null;
+      const resolved = fontRef.lookup ? fontRef : null;
       if (resolved instanceof PDFLibDict) {
         fontDict = resolved;
       }
@@ -79,29 +78,20 @@ export async function parseFontInfo(fontName: string, fontRef: unknown): Promise
 
     if (!fontDict) return null;
 
-    // Get base font name
     const baseFontObj = fontDict.lookup(PDFName.of('BaseFont'));
     const baseFont = baseFontObj?.toString().replace(/^\//, '') || 'Unknown';
 
-    // Get encoding
     const encodingObj = fontDict.lookup(PDFName.of('Encoding'));
     let encoding: FontEncoding = 'WinAnsiEncoding';
     let encodingMap: Map<number, string>;
 
-    console.log(`[Font Handler] Font ${fontName} Encoding object:`, encodingObj?.toString());
-
     if (encodingObj) {
       const encodingStr = encodingObj.toString();
 
-      // Check if encoding is a dictionary (with Differences)
       if (encodingObj instanceof PDFLibDict) {
-        // Get base encoding
         const baseEncodingObj = encodingObj.lookup(PDFName.of('BaseEncoding'));
         const baseEncodingStr = baseEncodingObj?.toString() || '/WinAnsiEncoding';
 
-        console.log(`[Font Handler] BaseEncoding: ${baseEncodingStr}`);
-
-        // Start with base encoding
         if (baseEncodingStr.includes('WinAnsiEncoding')) {
           encoding = 'WinAnsiEncoding';
           encodingMap = new Map(WIN_ANSI_ENCODING);
@@ -112,11 +102,9 @@ export async function parseFontInfo(fontName: string, fontRef: unknown): Promise
           encoding = 'StandardEncoding';
           encodingMap = new Map(STANDARD_ENCODING);
         } else {
-          // Default to WinAnsi
           encodingMap = new Map(WIN_ANSI_ENCODING);
         }
 
-        // Apply Differences array if present
         const differencesObj = encodingObj.lookup(PDFName.of('Differences'));
         if (differencesObj) {
           console.log(`[Font Handler] Font ${fontName} has Differences array`);
@@ -187,11 +175,9 @@ export async function parseFontInfo(fontName: string, fontRef: unknown): Promise
  * Apply Differences array to encoding map
  * Differences format: [code1 /name1 /name2 ... code2 /name3 ...]
  */
-function applyDifferences(encodingMap: Map<number, string>, differencesObj: unknown): void {
+function applyDifferences(encodingMap: Map<number, string>, differencesObj: PDFObject): void {
   try {
-    // Get array elements
     const differencesArray = (differencesObj as any).asArray?.() || [];
-    console.log(`[Font Handler] Processing ${differencesArray.length} differences entries`);
 
     let currentCode: number | null = null;
 
@@ -202,10 +188,8 @@ function applyDifferences(encodingMap: Map<number, string>, differencesObj: unkn
       if (/^\d+$/.test(itemStr)) {
         currentCode = parseInt(itemStr, 10);
       } else if (itemStr.startsWith('/') && currentCode !== null) {
-        // This is a glyph name
         const glyphName = itemStr.slice(1); // Remove leading slash
 
-        // Map glyph name to Unicode character
         const unicode = glyphNameToUnicode(glyphName);
         if (unicode) {
           encodingMap.set(currentCode, unicode);
@@ -224,7 +208,6 @@ function applyDifferences(encodingMap: Map<number, string>, differencesObj: unkn
  * This is a simplified mapping - a full implementation would use the Adobe Glyph List
  */
 function glyphNameToUnicode(glyphName: string): string | null {
-  // Check direct mapping
   if (COMMON_GLYPH_MAP[glyphName]) {
     return COMMON_GLYPH_MAP[glyphName];
   }
@@ -252,7 +235,6 @@ async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, st
   const map = new Map<number, string>();
 
   try {
-    // Get stream contents using pdf-lib API
     const cmapBytes = decodePDFRawStream(cmapStream as PDFRawStream).decode();
     const cmapText = new TextDecoder('latin1').decode(cmapBytes);
 
@@ -317,13 +299,11 @@ export function decodeText(bytes: Uint8Array, font: FontInfo): string {
       text += char;
     }
   } else {
-    // Single-byte encoding
     for (const byte of bytes) {
       const char = font.encodingMap.get(byte);
       if (char !== undefined) {
         text += char;
       } else {
-        // Fallback to direct character code
         text += String.fromCharCode(byte);
       }
     }
@@ -351,21 +331,16 @@ export function encodeText(
       bytes.push(code & 0xff);
     }
   } else {
-    // Single-byte encoding
     for (const char of text) {
       let code = font.reverseMap.get(char);
-      console.log(`Encoding character "${char}" in font ${font.name}: code=${code}`);
+
       if (code === undefined) {
-        for (const [otherFontName, otherFont] of fontMap) {
-          const code = otherFont.reverseMap.get(char);
-          if (code !== undefined) {
-            console.log(
-              `Character "${char}" found in alternative font ${otherFontName} with code ${code}`
-            );
-          }
+        for (const [_otherFontName, otherFont] of fontMap) {
+          code = otherFont.reverseMap.get(char);
         }
         if (!code) {
-          return null; // Encoding failure
+          console.warn(`[Font Handler] Character "${char}" not found in font ${font.name}`);
+          return null;
         }
       }
       bytes.push(code);
@@ -389,35 +364,22 @@ export function encodeTextWithFallback(
   let currentFont = primaryFont;
   let currentBytes: number[] = [];
 
-  console.log(
-    `[Font Handler] Encoding text "${text}" with fallback support, primary font: ${primaryFont.name} (${primaryFont.encoding})`
-  );
-
-  // Process each character, checking encoding per-font (not just once)
   for (const char of text) {
     let code = currentFont.reverseMap.get(char);
 
     if (code === undefined) {
-      // Character not in current font - find fallback
       const fallbackFont = fontRegistry.findFallbackFont(char, currentFont);
 
       if (!fallbackFont) {
         console.warn(
           `[Font Handler] No fallback font found for character "${char}" in family ${currentFont.baseFont}`
         );
-        // Track missing character
         if (!missingCharacters.includes(char)) {
           missingCharacters.push(char);
         }
-        // Return encoding failure
         return { segments: [], success: false, missingCharacters };
       }
 
-      console.log(
-        `[Font Handler] Found fallback font ${fallbackFont.name} (${fallbackFont.encoding}) for character "${char}"`
-      );
-
-      // Save current segment before switching fonts
       if (currentBytes.length > 0) {
         segments.push({
           bytes: new Uint8Array(currentBytes),
@@ -426,23 +388,20 @@ export function encodeTextWithFallback(
         currentBytes = [];
       }
 
-      // Switch to fallback font
+      // We know the character is in the fallback font, so we can safely get the code
+      code = fallbackFont.reverseMap.get(char)!;
       currentFont = fallbackFont;
-      code = currentFont.reverseMap.get(char)!;
     }
 
     // CRITICAL: Check encoding of CURRENT font, not primary font
     if (currentFont.encoding === 'Identity-H') {
-      // UTF-16 BE encoding (2 bytes per character)
       currentBytes.push((code >> 8) & 0xff);
       currentBytes.push(code & 0xff);
     } else {
-      // Single-byte encoding
       currentBytes.push(code);
     }
   }
 
-  // Save final segment
   if (currentBytes.length > 0) {
     segments.push({
       bytes: new Uint8Array(currentBytes),

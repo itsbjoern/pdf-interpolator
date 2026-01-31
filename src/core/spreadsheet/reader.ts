@@ -1,28 +1,24 @@
+import { readFileSync } from 'node:fs';
+import type { SpreadsheetData } from '@shared/types';
 import * as XLSX from 'xlsx';
-import { readFileSync } from 'fs';
-import { SpreadsheetData } from '@shared/types';
 import { formatNumberForLocale } from './number-formatter';
 
 export function readSpreadsheet(
   filePath: string,
   selectedSheets?: string[],
-  locale: 'en' | 'de' = 'en'
+  locale: string = 'en'
 ): SpreadsheetData {
   try {
-    // Read the file
     const buffer = readFileSync(filePath);
     const workbook = XLSX.read(buffer, { type: 'buffer' });
 
-    // Get sheet names
     const sheets = workbook.SheetNames;
     if (sheets.length === 0) {
       throw new Error('No sheets found in spreadsheet');
     }
 
-    // Determine which sheets to read
     const sheetsToRead = sheets.length === 1 ? sheets : selectedSheets || [];
 
-    // Combine data from all selected sheets
     const allColumns: Record<string, string[]> = {};
     const combinedData: Record<string, Record<string, string[]>> = {};
 
@@ -37,22 +33,16 @@ export function readSpreadsheet(
         raw: false
       }) as unknown[][];
 
-      if (jsonData.length === 0) {
-        return; // Skip empty sheets
-      }
+      if (jsonData.length === 0) return;
 
-      // First row is assumed to be headers
       const headers = jsonData[0] as string[];
 
       const columns = new Set<string>();
       const data: Record<string, string[]> = {};
 
       headers.forEach((header, colIndex) => {
-        if (!header) {
-          return; // Skip empty headers
-        }
+        if (!header) return;
 
-        // Add sheet name prefix if column exists in multiple sheets
         columns.add(header);
 
         data[header] = [];
@@ -62,9 +52,7 @@ export function readSpreadsheet(
           if (value === undefined || value === null) {
             data[header].push('');
           } else {
-            // XLSX with raw:false returns formatted strings
             const stringValue = String(value);
-            // Convert English number format to locale-specific format
             const formattedValue = formatNumberForLocale(stringValue, locale);
             data[header].push(formattedValue);
           }
@@ -91,7 +79,7 @@ export function readSpreadsheet(
 export function readSpreadsheetSheets(
   filePath: string,
   sheetNames: string[],
-  locale: 'en' | 'de' = 'en'
+  locale: string = 'en'
 ): SpreadsheetData {
   return readSpreadsheet(filePath, sheetNames, locale);
 }

@@ -1,5 +1,3 @@
-// Font registry for cross-font character fallback
-
 import type { FontInfo } from './types';
 
 /**

@@ -46,13 +46,11 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
       setExpandedPage(isExpanded ? pageNumber : false);
     };
 
-  const hasWarnings = result.warnings && result.warnings.length > 0;
   const totalMatches = result.totalMatches || 0;
   const totalReplacements = result.totalReplacements || 0;
   const failedReplacements = totalMatches - totalReplacements;
   const hasFailures = failedReplacements > 0;
 
-  // Determine overall status
   const isSuccess = result.success && !hasFailures;
   const isPartialSuccess = result.success && hasFailures;
   const isError = !result.success;
@@ -82,20 +80,16 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
       </DialogTitle>
 
       <DialogContent dividers>
-        {/* Error Message */}
-        {isError && (
+        {isError ? (
           <Alert severity="error" sx={{ mb: 3 }}>
             <AlertTitle>{t('results.error')}</AlertTitle>
             {result.error}
           </Alert>
-        )}
+        ) : null}
 
-        {/* Success/Warning Summary */}
-        {!isError && (
+        {!isError ? (
           <>
-            {/* Statistics Cards */}
             <Box display="flex" gap={2} mb={3} flexWrap="wrap">
-              {/* Successful Replacements */}
               <Paper
                 elevation={2}
                 sx={{
@@ -113,8 +107,7 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                 <Typography variant="body2">{t('results.successfulReplacements')}</Typography>
               </Paper>
 
-              {/* Failed Replacements */}
-              {hasFailures && (
+              {hasFailures ? (
                 <Paper
                   elevation={3}
                   sx={{
@@ -135,11 +128,10 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                     {t('results.failedReplacements')}
                   </Typography>
                 </Paper>
-              )}
+              ) : null}
             </Box>
 
-            {/* Overall Status Message */}
-            {isSuccess && (
+            {isSuccess ? (
               <Alert severity="success" sx={{ mb: 3 }}>
                 <AlertTitle>{t('results.successTitle')}</AlertTitle>
                 {t('results.successMessage', {
@@ -147,9 +139,9 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                   total: totalMatches
                 })}
               </Alert>
-            )}
+            ) : null}
 
-            {isPartialSuccess && (
+            {isPartialSuccess ? (
               <Alert severity="warning" sx={{ mb: 3 }}>
                 <AlertTitle>{t('results.warningTitle')}</AlertTitle>
                 {t('results.partialSuccessMessage', {
@@ -158,10 +150,9 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                   total: totalMatches
                 })}
               </Alert>
-            )}
+            ) : null}
 
-            {/* Output Path */}
-            {result.outputPath && (
+            {result.outputPath ? (
               <Box mb={3}>
                 <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                   {t('results.outputLocation')}
@@ -172,22 +163,21 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                   </Typography>
                 </Paper>
               </Box>
-            )}
+            ) : null}
 
             <Divider sx={{ my: 3 }} />
 
-            {/* Detailed Statistics by Mapping */}
-            {result.stats && result.stats.length > 0 && (
+            {result.stats && result.stats.length > 0 ? (
               <Box mb={3}>
                 <Typography variant="h6" gutterBottom>
                   {t('results.detailedStats')}
                 </Typography>
                 <List disablePadding>
-                  {result.stats.map((stat, index) => {
+                  {result.stats.map((stat) => {
                     const hasMappingFailures = stat.failedCount > 0;
                     return (
                       <Paper
-                        key={index}
+                        key={stat.mappingId}
                         variant="outlined"
                         sx={{
                           mb: 1,
@@ -217,14 +207,14 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                               size="small"
                               color="success"
                             />
-                            {hasMappingFailures && (
+                            {hasMappingFailures ? (
                               <Chip
                                 icon={<ErrorIcon />}
                                 label={`${stat.failedCount} ${t('results.failed')}`}
                                 size="small"
                                 color="error"
                               />
-                            )}
+                            ) : null}
                           </Box>
                         </Box>
                       </Paper>
@@ -232,25 +222,25 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                   })}
                 </List>
               </Box>
-            )}
+            ) : null}
 
-            {/* Warnings Section */}
-            {hasWarnings && (
+            {result.warnings && result.warnings.length > 0 ? (
               <Box>
                 <Alert severity="error" sx={{ mb: 2 }}>
                   <AlertTitle>
                     <Box display="flex" alignItems="center" gap={1}>
                       <WarningIcon />
                       {t('results.warningsTitle')} (
-                      {result.warnings!.reduce((sum, w) => sum + w.characterIssues.length, 0)}{' '}
-                      characters on {result.warnings!.length} pages)
+                      {result.warnings.reduce((sum, w) => sum + w.characterIssues.length, 0)}{' '}
+                      characters on {result.warnings.length} pages)
                     </Box>
                   </AlertTitle>
                   {t('results.warningsDescription')}
                 </Alert>
                 <Box>
-                  {result.warnings!.map((warning, warningIndex) => (
+                  {result.warnings.map((warning, warningIndex) => (
                     <Accordion
+                      // biome-ignore lint/suspicious/noArrayIndexKey: warnings will never change once generated
                       key={warningIndex}
                       expanded={expandedPage === warning.pageNumber}
                       onChange={handlePageAccordionChange(warning.pageNumber)}
@@ -272,6 +262,7 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                       </AccordionSummary>
                       <AccordionDetails sx={{ p: 0 }}>
                         {warning.characterIssues.map((issue, issueIndex) => (
+                          // biome-ignore lint/suspicious/noArrayIndexKey: character issues will never change once generated
                           <Box key={issueIndex} display="flex" gap={2} p={2}>
                             <Chip
                               label={issue.character}
@@ -307,9 +298,9 @@ export default function ResultsDialog({ open, onClose, result }: ResultsDialogPr
                   ))}
                 </Box>
               </Box>
-            )}
+            ) : null}
           </>
-        )}
+        ) : null}
       </DialogContent>
 
       <DialogActions sx={{ p: 2 }}>

@@ -1,7 +1,5 @@
-// Text extraction from PDF operations
-
-import { TextElement, FontInfo, TextBlock } from './types';
 import { decodeText } from './font-handler';
+import type { FontInfo, TextBlock, TextElement } from './types';
 
 /**
  * Extract text from a single TextBlock (NEW surgical approach)
@@ -22,7 +20,6 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       const cleanFontName = fontName.startsWith('/') ? fontName.slice(1) : fontName;
       currentFont = fontMap.get(cleanFontName) || fontMap.get(fontName) || null;
 
-      // Track font size
       const fontSize = operands[1];
       if (typeof fontSize === 'number') {
         currentFontSize = fontSize;
@@ -34,7 +31,6 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       continue;
     }
 
-    // Skip if no font is set
     if (!currentFont) continue;
 
     // Tj: Show text string
@@ -100,11 +96,9 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
           font: currentFont
         });
       }
-      continue;
     }
   }
 
-  // Update block with extracted text and font size
   block.textElements = textElements;
   block.fonts = usedFonts;
   block.currentFontSize = currentFontSize;

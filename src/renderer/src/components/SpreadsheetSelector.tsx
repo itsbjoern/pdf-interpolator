@@ -1,24 +1,24 @@
 import {
+  ArrowForward as ArrowForwardIcon,
+  Close as CloseIcon,
+  FolderOpen as FolderOpenIcon
+} from '@mui/icons-material';
+import {
+  Alert,
+  Autocomplete,
   Box,
   Button,
-  Typography,
-  Alert,
+  ButtonGroup,
+  Checkbox,
   CircularProgress,
   FormControlLabel,
-  Checkbox,
   Paper,
-  Autocomplete,
   TextField,
-  ButtonGroup
+  Typography
 } from '@mui/material';
-import {
-  ArrowForward as ArrowForwardIcon,
-  FolderOpen as FolderOpenIcon,
-  Close as CloseIcon
-} from '@mui/icons-material';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
-import { useState } from 'react';
 
 export default function SpreadsheetSelector() {
   const { t } = useTranslation();
@@ -43,7 +43,6 @@ export default function SpreadsheetSelector() {
 
       setSpreadsheetPath(filePath);
 
-      // Read the spreadsheet
       const data = await window.electron.readSpreadsheet(filePath);
       setSpreadsheetData(data);
     } catch (err) {
@@ -62,12 +61,10 @@ export default function SpreadsheetSelector() {
       setLoading(true);
       setError(null);
 
-      // Update selected sheets
       const newSelectedSheets = checked
         ? [...spreadsheetData.selectedSheets, sheetName]
         : spreadsheetData.selectedSheets.filter((s) => s !== sheetName);
 
-      // Re-read spreadsheet with new selection
       const data = await window.electron.readSpreadsheet(spreadsheetPath, newSelectedSheets);
       setSpreadsheetData(data);
     } catch (err) {
@@ -103,14 +100,16 @@ export default function SpreadsheetSelector() {
           ) : null}
         </ButtonGroup>
 
-        {spreadsheetData && (
+        {spreadsheetData ? (
           <Typography variant="body2" color="text.secondary">
-            {t('spreadsheet.selectedFile', { fileName: spreadsheetData.fileName })}
+            {t('spreadsheet.selectedFile', {
+              fileName: spreadsheetData.fileName
+            })}
           </Typography>
-        )}
+        ) : null}
       </Box>
 
-      {spreadsheetData && (
+      {spreadsheetData ? (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           {spreadsheetData.sheets.length === 1 ? null : (
             <Typography variant="subtitle2" gutterBottom>
@@ -142,7 +141,14 @@ export default function SpreadsheetSelector() {
                   )}
 
                   {spreadsheetData.selectedSheets.includes(sheet) ? (
-                    <Box sx={{ ml: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
+                    <Box
+                      sx={{
+                        ml: 4,
+                        display: 'flex',
+                        gap: 2,
+                        alignItems: 'center'
+                      }}
+                    >
                       <Autocomplete
                         disablePortal
                         size="small"
@@ -153,7 +159,9 @@ export default function SpreadsheetSelector() {
                         )}
                         value={mapping.sourceColumn || null}
                         onChange={(_, value) =>
-                          updateSheetMapping(sheet, { sourceColumn: value || '' })
+                          updateSheetMapping(sheet, {
+                            sourceColumn: value || ''
+                          })
                         }
                       />
 
@@ -169,7 +177,9 @@ export default function SpreadsheetSelector() {
                         )}
                         value={mapping.targetColumn || null}
                         onChange={(_, value) =>
-                          updateSheetMapping(sheet, { targetColumn: value || '' })
+                          updateSheetMapping(sheet, {
+                            targetColumn: value || ''
+                          })
                         }
                       />
                     </Box>
@@ -179,13 +189,13 @@ export default function SpreadsheetSelector() {
             })}
           </Box>
         </Paper>
-      )}
+      ) : null}
 
-      {error && (
+      {error ? (
         <Alert severity="error" sx={{ mt: 2 }}>
           {error}
         </Alert>
-      )}
+      ) : null}
     </Box>
   );
 }

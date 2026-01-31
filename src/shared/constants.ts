@@ -1,4 +1,3 @@
-// IPC channel names for main-renderer communication
 export const IPC_CHANNELS = {
   // File operations
   SELECT_SPREADSHEET: 'select-spreadsheet',
@@ -28,9 +27,18 @@ export const IPC_CHANNELS = {
   UPDATE_DOWNLOADED: 'update-downloaded'
 } as const;
 
-// Supported file extensions
 export const SUPPORTED_SPREADSHEET_EXTENSIONS = [
   { name: 'Spreadsheet Files', extensions: ['xlsx', 'xls', 'csv'] }
 ];
 
 export const SUPPORTED_PDF_EXTENSIONS = [{ name: 'PDF Files', extensions: ['pdf'] }];
+
+export const CHAR_BYTES = {
+  SPACE: 0x20,
+  CARRIAGE_RETURN: 0x0d,
+  LINE_FEED: 0x0a,
+  OPEN_BRACKET: 0x5b,
+  CLOSE_BRACKET: 0x5d,
+  LESS_THAN: 0x3c,
+  GREATER_THAN: 0x3e
+} as const;

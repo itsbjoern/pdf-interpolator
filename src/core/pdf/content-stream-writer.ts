@@ -1,6 +1,5 @@
-// Content stream serialization
-
-import { PDFValue, ParsedContentStream } from './types';
+import { CHAR_BYTES } from '@shared/constants';
+import type { ParsedContentStream, PDFOperation, PDFValue, TextBlock } from './types';
 
 /**
  * Rebuild content stream from parsed data
@@ -15,7 +14,7 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
   }
 
   // Build a map of operation -> TextBlock for quick lookup
-  const operationToBlock = new Map<any, { block: any; localIndex: number }>();
+  const operationToBlock = new Map<PDFOperation, { block: TextBlock; localIndex: number }>();
   for (const block of parsed.textBlocks) {
     for (let i = 0; i < block.operations.length; i++) {
       operationToBlock.set(block.operations[i], { block, localIndex: i });
@@ -23,26 +22,24 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
   }
 
   // Rebuild entire stream from all operations
-  // Build bytes directly to avoid string encoding issues with bytes 128-255
   const byteArrays: Uint8Array[] = [];
 
   for (const operation of parsed.allOperations) {
-    // Check if this operation belongs to a text block with replacements
     const blockInfo = operationToBlock.get(operation);
-
-    if (blockInfo && blockInfo.block.operationReplacements) {
-      const replacements = blockInfo.block.operationReplacements.get(blockInfo.localIndex);
-
-      if (replacements && replacements.length > 0) {
-        for (const replOp of replacements) {
-          byteArrays.push(serializeOperation(replOp));
-        }
-        continue; // Skip original operation
-      }
+    if (!blockInfo?.block.operationReplacements) {
+      byteArrays.push(serializeOperation(operation));
+      continue;
     }
 
-    // Serialize original operation (may have modified operands from simple replacement)
-    byteArrays.push(serializeOperation(operation));
+    const replacements = blockInfo.block.operationReplacements.get(blockInfo.localIndex);
+    if (!replacements || replacements.length === 0) {
+      byteArrays.push(serializeOperation(operation));
+      continue;
+    }
+
+    for (const replOp of replacements) {
+      byteArrays.push(serializeOperation(replOp));
+    }
   }
 
   // Concatenate all byte arrays
@@ -59,27 +56,24 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
 /**
  * Serialize a single PDF operation to bytes
  */
-function serializeOperation(operation: any): Uint8Array {
+function serializeOperation(operation: PDFOperation): Uint8Array {
   const parts: Uint8Array[] = [];
 
-  // Serialize operands
   for (const operand of operation.operands) {
     const serialized = serializeValueToBytes(operand);
     if (serialized.length > 0) {
       parts.push(serialized);
-      parts.push(new Uint8Array([0x20])); // space
+      parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
     }
   }
 
-  // Add operator
   const opBytes = new Uint8Array(operation.operator.length);
   for (let i = 0; i < operation.operator.length; i++) {
     opBytes[i] = operation.operator.charCodeAt(i);
   }
   parts.push(opBytes);
-  parts.push(new Uint8Array([0x0d, 0x0a])); // newline
+  parts.push(new Uint8Array([CHAR_BYTES.CARRIAGE_RETURN, CHAR_BYTES.LINE_FEED]));
 
-  // Concatenate parts
   const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
   const result = new Uint8Array(totalLength);
   let offset = 0;
@@ -94,7 +88,6 @@ function serializeOperation(operation: any): Uint8Array {
  * Serialize a PDF value to bytes (avoids string encoding issues)
  */
 function serializeValueToBytes(value: PDFValue): Uint8Array {
-  // Number
   if (typeof value === 'number') {
     const str = value.toString();
     const bytes = new Uint8Array(str.length);
@@ -121,13 +114,13 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
   // Array
   else if (Array.isArray(value)) {
     const parts: Uint8Array[] = [];
-    parts.push(new Uint8Array([0x5b])); // [
+    parts.push(new Uint8Array([CHAR_BYTES.OPEN_BRACKET]));
 
     for (let i = 0; i < value.length; i++) {
       parts.push(serializeValueToBytes(value[i]));
     }
 
-    parts.push(new Uint8Array([0x5d])); // ]
+    parts.push(new Uint8Array([CHAR_BYTES.CLOSE_BRACKET]));
 
     const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
     const result = new Uint8Array(totalLength);
@@ -142,7 +135,7 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
   // Dictionary (appears in content streams for BDC marked content, etc.)
   else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     const parts: Uint8Array[] = [];
-    parts.push(new Uint8Array([0x3c, 0x3c])); // <<
+    parts.push(new Uint8Array([CHAR_BYTES.LESS_THAN, CHAR_BYTES.LESS_THAN]));
 
     const dict = value as { [key: string]: PDFValue };
     const keys = Object.keys(dict);
@@ -151,24 +144,22 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
       const key = keys[i];
       const val = dict[key];
 
-      // Serialize key (should already have / prefix)
       const keyBytes = new Uint8Array(key.length);
       for (let j = 0; j < key.length; j++) {
         keyBytes[j] = key.charCodeAt(j);
       }
       parts.push(keyBytes);
-      parts.push(new Uint8Array([0x20])); // space
+      parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
 
-      // Serialize value
       parts.push(serializeValueToBytes(val));
 
       // Add space between key-value pairs (except after last pair)
       if (i < keys.length - 1) {
-        parts.push(new Uint8Array([0x20])); // space
+        parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
       }
     }
 
-    parts.push(new Uint8Array([0x3e, 0x3e])); // >>
+    parts.push(new Uint8Array([CHAR_BYTES.GREATER_THAN, CHAR_BYTES.GREATER_THAN]));
 
     const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
     const result = new Uint8Array(totalLength);
@@ -194,15 +185,14 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
 function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
   const result: number[] = [];
 
-  result.push(0x3c); // <
+  result.push(CHAR_BYTES.LESS_THAN);
 
-  // Convert each byte to two hex digits
   for (const byte of bytes) {
     const hex = byte.toString(16).toUpperCase().padStart(2, '0');
     result.push(hex.charCodeAt(0), hex.charCodeAt(1));
   }
 
-  result.push(0x3e); // >
+  result.push(CHAR_BYTES.GREATER_THAN);
 
   const resultBytes = new Uint8Array(result);
   return resultBytes;

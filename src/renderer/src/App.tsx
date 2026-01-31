@@ -1,22 +1,24 @@
-import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
 import {
-  Container,
   Box,
-  Typography,
-  Stepper,
+  Container,
+  CssBaseline,
+  createTheme,
+  Divider,
+  Paper,
   Step,
   StepLabel,
-  Paper,
-  Divider
+  Stepper,
+  ThemeProvider,
+  Typography
 } from '@mui/material';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from './store/useAppStore';
-import SpreadsheetSelector from './components/SpreadsheetSelector';
 import PDFSelector from './components/PDFSelector';
 import ProcessButton from './components/ProcessButton';
+import SpreadsheetSelector from './components/SpreadsheetSelector';
 import UpdateNotification from './components/UpdateNotification';
 import { getSystemLanguage } from './i18n/config';
+import { useAppStore } from './store/useAppStore';
 
 const theme = createTheme({
   palette: {
@@ -34,17 +36,14 @@ function App() {
   const { t, i18n } = useTranslation();
   const { spreadsheetData, sheetMappings, pdfPath } = useAppStore();
 
-  // Detect system language on every startup
   useEffect(() => {
     const initializeLanguage = async () => {
       try {
-        // Check for LOCALE environment variable first (for development/testing)
         if (window.electron?.env?.LOCALE) {
           await i18n.changeLanguage(window.electron.env.LOCALE);
           return;
         }
 
-        // Detect system language
         const systemLanguage = getSystemLanguage();
         await i18n.changeLanguage(systemLanguage);
       } catch (error) {
@@ -55,11 +54,9 @@ function App() {
     initializeLanguage();
   }, [i18n]);
 
-  // Determine active step based on completed steps
   const getActiveStep = () => {
     if (!spreadsheetData) return 0;
 
-    // Check if all selected sheets have complete mappings
     const allMappingsComplete =
       Object.keys(sheetMappings).length > 0 &&
       spreadsheetData.selectedSheets.every(
@@ -144,7 +141,6 @@ function App() {
         </Paper>
       </Container>
 
-      {/* Update notification component */}
       <UpdateNotification />
     </ThemeProvider>
   );
