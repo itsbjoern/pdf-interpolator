@@ -124,9 +124,6 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
     parts.push(new Uint8Array([0x5b])); // [
 
     for (let i = 0; i < value.length; i++) {
-      if (i > 0) {
-        parts.push(new Uint8Array([0x20])); // space
-      }
       parts.push(serializeValueToBytes(value[i]));
     }
 

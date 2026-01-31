@@ -7,7 +7,7 @@ import {
   PDFArray,
   PDFRef,
   PDFName,
-  PDFDict,
+  PDFDict as PDFLibDict,
   PDFNumber,
   decodePDFRawStream,
   PDFRawStream
@@ -16,12 +16,18 @@ import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning } from
 import { readSpreadsheet } from '@core/spreadsheet/reader';
 import { loadPDF, savePDF, getPageCount } from './loader';
 import { parseContentStreamWithPositions } from './content-stream-parser';
-import { extractFonts } from './font-handler';
+import { extractFonts, parseFontInfo } from './font-handler';
 import { extractTextFromBlock } from './text-decoder';
 import { performReplacementsOnBlock } from './text-replacer';
 import { patchContentStream } from './content-stream-writer';
 import { formatErrorForUser } from './error-handler';
-import { ProgressCallback, ProgressPhase } from './types';
+import {
+  ProgressCallback,
+  ProgressPhase,
+  XObjectReference,
+  XObjectModifications,
+  XObjectProcessingContext
+} from './types';
 import type { ParsedContentStream } from './types';
 import { FontRegistry } from './font-registry';
 
@@ -340,10 +346,24 @@ async function processPage(
   let totalPageMatches = 0;
   const pageCharacterIssues = new Map<string, Set<string>>();
 
-  for (let streamIndex = 0; streamIndex < streamEntries.length; streamIndex++) {
-    const entry = streamEntries[streamIndex];
+  // Parse all content streams first (before text processing)
+  for (const entry of streamEntries) {
     const parsed = parseContentStreamWithPositions(entry.bytes, pageIndex);
     entry.parsed = parsed;
+  }
+
+  // Extract XObject references from all streams
+  const xobjectRefs: XObjectReference[] = [];
+  for (const entry of streamEntries) {
+    const refs = extractXObjectReferences(entry.parsed!, page);
+    xobjectRefs.push(...refs);
+  }
+
+  console.log(`[PDF Processor] Page ${pageIndex + 1}: Found ${xobjectRefs.length} XObject Form(s)`);
+
+  for (let streamIndex = 0; streamIndex < streamEntries.length; streamIndex++) {
+    const entry = streamEntries[streamIndex];
+    const parsed = entry.parsed!;
 
     for (const block of parsed.textBlocks) {
       extractTextFromBlock(block, fontMap);
@@ -380,6 +400,64 @@ async function processPage(
         entry.patchedBytes = patchedBytes;
       }
     }
+  }
+
+  // Process XObjects
+  let xobjectMatchCount = 0;
+  let xobjectReplacementCount = 0;
+  const xobjectModifications = new Map<PDFStream, Uint8Array>();
+
+  if (xobjectRefs.length > 0) {
+    console.log(
+      `[PDF Processor] Page ${pageIndex + 1}: Processing ${xobjectRefs.length} XObject(s)`
+    );
+
+    const xobjectContext: XObjectProcessingContext = {
+      replacements: blockReplacements,
+      visitedXObjects: new Set(),
+      depth: 0,
+      maxDepth: 10,
+      pageIndex,
+      pageFontRegistry: fontRegistry,
+      page
+    };
+
+    for (const xobjectRef of xobjectRefs) {
+      if (!xobjectRef.xobjectStream) {
+        continue;
+      }
+
+      try {
+        const xobjMods = await processXObject(xobjectRef, xobjectContext);
+
+        // Merge modifications
+        for (const [stream, bytes] of xobjMods.modifications) {
+          xobjectModifications.set(stream, bytes);
+        }
+
+        // Merge character issues
+        for (const [char, strings] of xobjMods.characterIssues) {
+          if (!pageCharacterIssues.has(char)) {
+            pageCharacterIssues.set(char, new Set());
+          }
+          for (const str of strings) {
+            pageCharacterIssues.get(char)!.add(str);
+          }
+        }
+
+        xobjectMatchCount += xobjMods.matchCount;
+        xobjectReplacementCount += xobjMods.replacementCount;
+      } catch (error) {
+        console.error(`[PDF Processor] Error processing XObject "${xobjectRef.name}":`, error);
+      }
+    }
+
+    totalPageMatches += xobjectMatchCount;
+
+    console.log(
+      `[PDF Processor] Page ${pageIndex + 1}: XObject processing complete - ` +
+        `${xobjectReplacementCount} replacements from ${xobjectMatchCount} matches`
+    );
   }
 
   let totalCount = 0;
@@ -435,8 +513,22 @@ async function processPage(
     );
   }
 
+  // Apply XObject modifications
+  if (xobjectModifications.size > 0) {
+    console.log(
+      `[PDF Processor] Page ${pageIndex + 1}: Applying modifications to ${xobjectModifications.size} XObject(s)`
+    );
+
+    try {
+      await updateXObjectStreams(xobjectModifications);
+      console.log('[PDF Processor] Successfully updated XObject stream(s)');
+    } catch (error) {
+      console.error('[PDF Processor] Failed to update XObject stream(s):', error);
+    }
+  }
+
   return {
-    totalCount,
+    totalCount: totalCount + xobjectReplacementCount,
     totalMatches: totalPageMatches,
     countsByMapping,
     matchesByMapping,
@@ -503,6 +595,279 @@ async function decodeStream(stream: PDFStream): Promise<Uint8Array | null> {
 }
 
 /**
+ * Extract XObject references from parsed content stream
+ * Finds all "Do" operators and resolves them to XObject Form streams
+ */
+function extractXObjectReferences(
+  parsed: ParsedContentStream,
+  page: PDFPage
+): XObjectReference[] {
+  const xobjectRefs: XObjectReference[] = [];
+  const resources = page.node.Resources();
+
+  if (!resources) {
+    return xobjectRefs;
+  }
+
+  const xobjectDict = resources.lookupMaybe(PDFName.of('XObject'), PDFLibDict);
+  if (!xobjectDict) {
+    return xobjectRefs;
+  }
+
+  // Find all "Do" operators in operations
+  for (const operation of parsed.allOperations) {
+    if (operation.operator === 'Do' && operation.operands.length >= 1) {
+      const xobjectName = operation.operands[0] as string; // e.g., "/Fm1" or "Fm1"
+      const cleanName = xobjectName.startsWith('/') ? xobjectName.slice(1) : xobjectName;
+
+      // Look up XObject in Resources
+      const xobjectRef = xobjectDict.lookup(PDFName.of(cleanName));
+      if (!xobjectRef) {
+        console.warn(`[XObject] XObject "${cleanName}" not found in Resources`);
+        continue;
+      }
+
+      // Resolve to PDFStream
+      const context = page.doc.context;
+      const xobjectStream = context.lookupMaybe(xobjectRef, PDFStream);
+
+      if (!xobjectStream) {
+        console.warn(`[XObject] XObject "${cleanName}" is not a stream`);
+        continue;
+      }
+
+      // Check if it's a Form XObject (not Image)
+      const subtype = xobjectStream.dict.lookupMaybe(PDFName.of('Subtype'), PDFName);
+      const subtypeStr = subtype?.asString() || '';
+      if (!subtypeStr.includes('Form')) {
+        console.log(`[XObject] Skipping non-Form XObject "${cleanName}" (${subtypeStr})`);
+        continue;
+      }
+
+      // Get XObject's Resources
+      const xobjResources = xobjectStream.dict.lookupMaybe(PDFName.of('Resources'), PDFLibDict);
+
+      xobjectRefs.push({
+        name: cleanName,
+        xobjectStream,
+        resources: xobjResources || null
+      });
+
+      console.log(`[XObject] Found Form XObject: "${cleanName}"`);
+    }
+  }
+
+  return xobjectRefs;
+}
+
+/**
+ * Extract fonts from XObject Resources dictionary
+ * Similar to extractFonts() but works with XObject context
+ */
+async function extractXObjectFonts(
+  xobjectResources: any | null,
+  xobjectName: string
+): Promise<Map<string, import('./types').FontInfo>> {
+  const fontMap = new Map<string, import('./types').FontInfo>();
+
+  if (!xobjectResources) {
+    console.log(`[XObject] No resources in XObject "${xobjectName}"`);
+    return fontMap;
+  }
+
+  const fontDict = xobjectResources.lookupMaybe?.(PDFName.of('Font'), PDFLibDict);
+  if (!fontDict) {
+    console.log(`[XObject] No Font dictionary in XObject "${xobjectName}"`);
+    return fontMap;
+  }
+
+  const fontNames = fontDict.keys();
+  console.log(`[XObject] Found ${fontNames.length} fonts in XObject "${xobjectName}"`);
+
+  for (const fontNameObj of fontNames) {
+    const fontName = fontNameObj.asString();
+    const fontRef = fontDict.lookup(fontNameObj);
+
+    if (!fontRef) continue;
+
+    // Reuse exported parseFontInfo from font-handler.ts
+    const fontInfo = await parseFontInfo(fontName, fontRef);
+    if (fontInfo) {
+      console.log(
+        `[XObject] Loaded font in XObject "${xobjectName}": ${fontName} -> ${fontInfo.baseFont}`
+      );
+      fontMap.set(fontName, fontInfo);
+    }
+  }
+
+  return fontMap;
+}
+
+/**
+ * Process a single XObject Form's content stream
+ * Returns modifications to be applied to the XObject stream
+ * Handles nested XObjects recursively
+ */
+async function processXObject(
+  xobjectRef: XObjectReference,
+  context: XObjectProcessingContext
+): Promise<XObjectModifications> {
+  const modifications: Map<PDFStream, Uint8Array> = new Map();
+  const characterIssues = new Map<string, Set<string>>();
+  let matchCount = 0;
+  let replacementCount = 0;
+
+  // Check recursion depth
+  if (context.depth >= context.maxDepth) {
+    console.warn(
+      `[XObject] Max recursion depth ${context.maxDepth} reached for XObject "${xobjectRef.name}"`
+    );
+    return { modifications, characterIssues, matchCount, replacementCount };
+  }
+
+  // Check for circular references
+  if (xobjectRef.xobjectStream && context.visitedXObjects.has(xobjectRef.xobjectStream)) {
+    console.warn(`[XObject] Circular reference detected for XObject "${xobjectRef.name}"`);
+    return { modifications, characterIssues, matchCount, replacementCount };
+  }
+
+  if (xobjectRef.xobjectStream) {
+    context.visitedXObjects.add(xobjectRef.xobjectStream);
+  }
+
+  console.log(`[XObject] Processing XObject "${xobjectRef.name}" at depth ${context.depth}`);
+
+  // Decode XObject content stream
+  if (!xobjectRef.xobjectStream) {
+    console.warn(`[XObject] XObject "${xobjectRef.name}" has no stream`);
+    return { modifications, characterIssues, matchCount, replacementCount };
+  }
+
+  const xobjectBytes = await decodeStream(xobjectRef.xobjectStream);
+  if (!xobjectBytes) {
+    console.warn(`[XObject] Failed to decode XObject "${xobjectRef.name}"`);
+    return { modifications, characterIssues, matchCount, replacementCount };
+  }
+
+  // Parse content stream
+  const parsed = parseContentStreamWithPositions(xobjectBytes, context.pageIndex);
+
+  // Extract fonts from XObject Resources
+  const xobjectFonts = await extractXObjectFonts(xobjectRef.resources, xobjectRef.name);
+
+  // Merge XObject fonts into a scoped font registry
+  const xobjectFontRegistry = new FontRegistry();
+
+  // Add page-level fonts first (for fallback)
+  for (const family of context.pageFontRegistry.getFamilies().values()) {
+    for (const fontInfo of family.fonts.values()) {
+      xobjectFontRegistry.addFont(fontInfo);
+    }
+  }
+
+  // Add XObject-specific fonts (may override page fonts)
+  for (const font of xobjectFonts.values()) {
+    xobjectFontRegistry.addFont(font);
+  }
+
+  // Check for nested XObjects (recursive call)
+  const nestedXObjects = extractXObjectReferences(parsed, context.page);
+
+  if (nestedXObjects.length > 0) {
+    console.log(
+      `[XObject] Found ${nestedXObjects.length} nested XObjects in "${xobjectRef.name}"`
+    );
+
+    const nestedContext: XObjectProcessingContext = {
+      ...context,
+      depth: context.depth + 1,
+      pageFontRegistry: xobjectFontRegistry // Pass merged registry down
+    };
+
+    for (const nestedXObj of nestedXObjects) {
+      try {
+        const nestedMods = await processXObject(nestedXObj, nestedContext);
+
+        // Merge nested modifications
+        for (const [stream, bytes] of nestedMods.modifications) {
+          modifications.set(stream, bytes);
+        }
+
+        // Merge character issues
+        for (const [char, strings] of nestedMods.characterIssues) {
+          if (!characterIssues.has(char)) {
+            characterIssues.set(char, new Set());
+          }
+          for (const str of strings) {
+            characterIssues.get(char)!.add(str);
+          }
+        }
+
+        matchCount += nestedMods.matchCount;
+        replacementCount += nestedMods.replacementCount;
+      } catch (error) {
+        console.error(
+          `[XObject] Error processing nested XObject "${nestedXObj.name}":`,
+          error
+        );
+      }
+    }
+  }
+
+  // Process text blocks in XObject content stream
+  for (const block of parsed.textBlocks) {
+    extractTextFromBlock(block, xobjectFonts);
+
+    const result = performReplacementsOnBlock(
+      block,
+      context.replacements,
+      xobjectFonts,
+      xobjectFontRegistry
+    );
+
+    matchCount += result.matchCount;
+
+    if (result.modified) {
+      replacementCount += result.count;
+    }
+
+    // Merge character issues
+    for (const [char, strings] of result.characterIssues) {
+      if (!characterIssues.has(char)) {
+        characterIssues.set(char, new Set());
+      }
+      for (const str of strings) {
+        characterIssues.get(char)!.add(str);
+      }
+    }
+  }
+
+  // Check if any modifications were made
+  const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
+
+  if (modifiedBlocks.length > 0) {
+    console.log(
+      `[XObject] XObject "${xobjectRef.name}": ${modifiedBlocks.length} text blocks modified`
+    );
+
+    // Patch content stream
+    const patchedBytes = patchContentStream(parsed);
+
+    if (patchedBytes.length === 0) {
+      console.error(
+        `[XObject] Patched stream is empty for XObject "${xobjectRef.name}", skipping`
+      );
+    } else {
+      modifications.set(xobjectRef.xobjectStream, patchedBytes);
+    }
+  } else {
+    console.log(`[XObject] No modifications needed for XObject "${xobjectRef.name}"`);
+  }
+
+  return { modifications, characterIssues, matchCount, replacementCount };
+}
+
+/**
  * Re-encode stream bytes with the same filter as the original stream when supported.
  * Supports single FlateDecode without predictor (DecodeParms Predictor > 1 not implemented).
  * Returns compressed bytes, or null to write uncompressed.
@@ -524,7 +889,7 @@ function encodeStreamWithFilter(
 
   if (!isFlateDecode) return null;
 
-  if (decodeParmsVal instanceof PDFDict) {
+  if (decodeParmsVal instanceof PDFLibDict) {
     const predictor = decodeParmsVal.lookupMaybe(PDFName.of('Predictor'), PDFNumber);
     if (predictor !== undefined && predictor.asNumber() > 1) {
       return null;
@@ -598,5 +963,25 @@ async function updatePageContentStream(
       }
     }
     console.log(`[PDF Processor] Updated ${streamEntries.filter(e => e.modified).length} of ${streamEntries.length} stream(s) in place`);
+  }
+}
+
+/**
+ * Update XObject streams with modified content
+ * Similar to updateStreamInPlace but for XObjects
+ */
+async function updateXObjectStreams(modifications: Map<PDFStream, Uint8Array>): Promise<void> {
+  for (const [xobjectStream, patchedBytes] of modifications) {
+    const entry: ContentStreamEntry = {
+      stream: xobjectStream,
+      bytes: new Uint8Array(), // Not used
+      ref: null,
+      modified: true,
+      patchedBytes
+    };
+
+    updateStreamInPlace(entry);
+
+    console.log(`[PDF Processor] Updated XObject stream with ${patchedBytes.length} bytes`);
   }
 }

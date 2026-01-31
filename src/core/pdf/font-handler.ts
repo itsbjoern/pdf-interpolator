@@ -63,7 +63,7 @@ export async function extractFonts(page: PDFPage): Promise<Map<string, FontInfo>
 /**
  * Parse font information from font dictionary
  */
-async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontInfo | null> {
+export async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontInfo | null> {
   try {
     let fontDict: PDFLibDict | null = null;
 
@@ -83,8 +83,6 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
     const baseFontObj = fontDict.lookup(PDFName.of('BaseFont'));
     const baseFont = baseFontObj?.toString().replace(/^\//, '') || 'Unknown';
 
-    console.log(`[Font Handler] Parsing font ${fontName}: BaseFont=${baseFont}`);
-
     // Get encoding
     const encodingObj = fontDict.lookup(PDFName.of('Encoding'));
     let encoding: FontEncoding = 'WinAnsiEncoding';
@@ -97,10 +95,6 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
 
       // Check if encoding is a dictionary (with Differences)
       if (encodingObj instanceof PDFLibDict) {
-        console.log(
-          `[Font Handler] Font ${fontName} has encoding dictionary with potential Differences`
-        );
-
         // Get base encoding
         const baseEncodingObj = encodingObj.lookup(PDFName.of('BaseEncoding'));
         const baseEncodingStr = baseEncodingObj?.toString() || '/WinAnsiEncoding';
@@ -153,7 +147,6 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
         }
       } else {
         // Unknown encoding, use WinAnsi as fallback
-        console.warn(`[Font Handler] Unknown encoding: ${encodingStr}, using WinAnsi fallback`);
         encoding = 'Custom';
         encodingMap = new Map(WIN_ANSI_ENCODING);
       }
@@ -161,12 +154,10 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
       // No encoding specified, check for ToUnicode CMap first
       const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
       if (toUnicode && toUnicode instanceof PDFStream) {
-        console.log(`[Font Handler] No encoding specified, but ToUnicode CMap found`);
         encoding = 'Custom';
         encodingMap = await parseToUnicodeCMap(toUnicode);
       } else {
         // Use WinAnsi as default
-        console.log(`[Font Handler] No encoding or ToUnicode specified, defaulting to WinAnsi`);
         encodingMap = new Map(WIN_ANSI_ENCODING);
       }
     }
@@ -177,17 +168,6 @@ async function parseFontInfo(fontName: string, fontRef: unknown): Promise<FontIn
       if (!reverseMap.has(char)) {
         reverseMap.set(char, code);
       }
-    }
-
-    // Debug: Check if Euro sign is in the maps
-    if (encodingMap.has(128)) {
-      console.log(
-        `[Font Handler] Font ${fontName}: byte 128 maps to "${encodingMap.get(128)}" (${encodingMap.get(128)?.charCodeAt(0)})`
-      );
-    }
-    const euroCode = reverseMap.get('€');
-    if (euroCode !== undefined) {
-      console.log(`[Font Handler] Font ${fontName}: Euro sign (€) encodes to byte ${euroCode}`);
     }
 
     return {
@@ -334,9 +314,6 @@ export function decodeText(bytes: Uint8Array, font: FontInfo): string {
     for (let i = 0; i < bytes.length; i += 2) {
       const code = (bytes[i] << 8) | (bytes[i + 1] || 0);
       const char = font.encodingMap.get(code) || String.fromCharCode(code);
-      if (char === '€') {
-        console.log(`[Font Handler] Decoded Euro from byte ${code} in font ${font.name}`);
-      }
       text += char;
     }
   } else {
@@ -345,10 +322,6 @@ export function decodeText(bytes: Uint8Array, font: FontInfo): string {
       const char = font.encodingMap.get(byte);
       if (char !== undefined) {
         text += char;
-        // Debug: Log Euro sign decoding
-        if (char === '€') {
-          console.log(`[Font Handler] Decoded Euro from byte ${byte} in font ${font.name}`);
-        }
       } else {
         // Fallback to direct character code
         text += String.fromCharCode(byte);
@@ -383,9 +356,6 @@ export function encodeText(
       let code = font.reverseMap.get(char);
       console.log(`Encoding character "${char}" in font ${font.name}: code=${code}`);
       if (code === undefined) {
-        // Character not in font
-        console.warn(`Character "${char}" not found in font ${font.name}`);
-
         for (const [otherFontName, otherFont] of fontMap) {
           const code = otherFont.reverseMap.get(char);
           if (code !== undefined) {
@@ -429,9 +399,6 @@ export function encodeTextWithFallback(
 
     if (code === undefined) {
       // Character not in current font - find fallback
-      console.log(
-        `[Font Handler] Character "${char}" not in font ${currentFont.name}, searching for fallback`
-      );
       const fallbackFont = fontRegistry.findFallbackFont(char, currentFont);
 
       if (!fallbackFont) {
@@ -469,15 +436,9 @@ export function encodeTextWithFallback(
       // UTF-16 BE encoding (2 bytes per character)
       currentBytes.push((code >> 8) & 0xff);
       currentBytes.push(code & 0xff);
-      console.log(
-        `[Font Handler] Encoded "${char}" with Identity-H font ${currentFont.name}: [${(code >> 8) & 0xff}, ${code & 0xff}]`
-      );
     } else {
       // Single-byte encoding
       currentBytes.push(code);
-      console.log(
-        `[Font Handler] Encoded "${char}" with single-byte font ${currentFont.name}: [${code}]`
-      );
     }
   }
 
@@ -488,8 +449,6 @@ export function encodeTextWithFallback(
       font: currentFont
     });
   }
-
-  console.log(`[Font Handler] Successfully encoded text into ${segments.length} segment(s)`);
 
   return { segments, success: true, missingCharacters: [] };
 }

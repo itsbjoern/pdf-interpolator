@@ -1,5 +1,8 @@
 // PDF-specific types for text replacement engine
 
+import type { PDFStream, PDFDict as PDFLibDict, PDFPage } from 'pdf-lib';
+import type { FontRegistry } from './font-registry';
+
 /**
  * Represents a PDF value (operand)
  */
@@ -109,4 +112,36 @@ export interface ParsedContentStream {
   originalBytes: Uint8Array;  // Original stream bytes (PRESERVED)
   allOperations: PDFOperation[]; // All operations (including graphics)
   textBlocks: TextBlock[];    // Only the BT/ET blocks
+}
+
+/**
+ * Reference to an XObject Form found in content stream
+ */
+export interface XObjectReference {
+  name: string;                     // XObject name from Do operator (e.g., "Fm1")
+  xobjectStream: PDFStream | null;  // Resolved XObject stream
+  resources: PDFLibDict | null;     // XObject's Resources dictionary
+}
+
+/**
+ * Modifications made to XObject streams
+ */
+export interface XObjectModifications {
+  modifications: Map<PDFStream, Uint8Array>; // XObject stream → patched bytes
+  characterIssues: Map<string, Set<string>>; // Accumulated character issues
+  matchCount: number;                        // Total matches in XObjects
+  replacementCount: number;                  // Total successful replacements in XObjects
+}
+
+/**
+ * Context for XObject processing (recursion state)
+ */
+export interface XObjectProcessingContext {
+  replacements: Array<{ source: string; target: string }>;
+  visitedXObjects: Set<PDFStream>;  // Track visited XObject streams
+  depth: number;                    // Current recursion depth
+  maxDepth: number;                 // Maximum allowed depth (default: 10)
+  pageIndex: number;                // For logging
+  pageFontRegistry: FontRegistry;   // FontRegistry instance
+  page: PDFPage;                    // PDFPage instance (for nested XObject resolution)
 }
