@@ -5,7 +5,6 @@
     "src/renderer/src/**/*",
     "src/renderer/src/**/*.tsx",
     "src/preload/*.d.ts",
-    "src/score/**/*",
     "src/shared/**/*"
   ],
   "compilerOptions": {
@@ -14,9 +13,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@main/*": ["src/main/*"],
       "@renderer/*": ["src/renderer/src/*"],
-      "@core/*": ["src/core/*"],
       "@shared/*": ["src/shared/*"]
     }
   }

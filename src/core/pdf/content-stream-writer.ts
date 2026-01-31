@@ -22,18 +22,6 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
     }
   }
 
-  // Debug: Log blocks with replacements
-  for (const block of modifiedBlocks) {
-    if (block.operationReplacements && block.operationReplacements.size > 0) {
-      console.log(
-        `[Content Stream Writer] Block has ${block.operationReplacements.size} operation replacement(s)`
-      );
-      for (const [idx, ops] of block.operationReplacements) {
-        console.log(`[Content Stream Writer]   Index ${idx}: ${ops.length} replacement operations`);
-      }
-    }
-  }
-
   // Rebuild entire stream from all operations
   // Build bytes directly to avoid string encoding issues with bytes 128-255
   const byteArrays: Uint8Array[] = [];
@@ -89,7 +77,7 @@ function serializeOperation(operation: any): Uint8Array {
     opBytes[i] = operation.operator.charCodeAt(i);
   }
   parts.push(opBytes);
-  parts.push(new Uint8Array([0x0a])); // newline
+  parts.push(new Uint8Array([0x0d, 0x0a])); // newline
 
   // Concatenate parts
   const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
@@ -117,7 +105,7 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
   }
 
   // String (name like /F1)
-  if (typeof value === 'string') {
+  else if (typeof value === 'string') {
     const bytes = new Uint8Array(value.length);
     for (let i = 0; i < value.length; i++) {
       bytes[i] = value.charCodeAt(i);
@@ -126,12 +114,12 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
   }
 
   // Byte array (text string)
-  if (value instanceof Uint8Array) {
+  else if (value instanceof Uint8Array) {
     return bytesToPDFStringLiteral(value);
   }
 
   // Array
-  if (Array.isArray(value)) {
+  else if (Array.isArray(value)) {
     const parts: Uint8Array[] = [];
     parts.push(new Uint8Array([0x5b])); // [
 
@@ -155,11 +143,14 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
   }
 
   // Dictionary (shouldn't appear in content streams, but handle anyway)
-  if (typeof value === 'object' && value !== null) {
+  else if (typeof value === 'object' && value !== null) {
     return new Uint8Array([0x3c, 0x3c, 0x3e, 0x3e]); // <<>>
   }
 
-  return new Uint8Array(0);
+  // Should never happen
+  else {
+    throw new Error(`Unsupported value type: ${typeof value}`);
+  }
 }
 
 /**
@@ -197,9 +188,10 @@ function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
     } else if (byte === 0x0c) {
       // \f
       result.push(0x5c, 0x66); // \f
+    } else if (byte === 0x00) {
+      // Null is not allowed in PDF literal strings; use octal escape \000
+      result.push(0x5c, 0x30, 0x30, 0x30); // \000
     } else {
-      // All other bytes (including 128-255) written as-is
-      // This preserves extended ASCII characters like Euro sign
       result.push(byte);
     }
   }
@@ -207,13 +199,5 @@ function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
   result.push(0x29); // )
 
   const resultBytes = new Uint8Array(result);
-
-  // Debug: Log if Euro sign (byte 128) is present
-  if (bytes.includes(128)) {
-    console.log('[Content Stream Writer] Writing Euro sign (byte 128)');
-    console.log('[Content Stream Writer] Input bytes:', Array.from(bytes));
-    console.log('[Content Stream Writer] Output bytes:', Array.from(resultBytes));
-  }
-
   return resultBytes;
 }

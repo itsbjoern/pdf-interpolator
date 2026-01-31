@@ -1,6 +1,18 @@
 // Main PDF processing entry point
 
-import { PDFPage, PDFStream, PDFArray, PDFRef, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
+import { deflateSync } from 'node:zlib';
+import {
+  PDFPage,
+  PDFStream,
+  PDFArray,
+  PDFRef,
+  PDFName,
+  PDFDict,
+  PDFNumber,
+  decodePDFRawStream,
+  PDFRawStream,
+  PDFContext
+} from 'pdf-lib';
 import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning } from '@shared/types';
 import { readSpreadsheet } from '@core/spreadsheet/reader';
 import { loadPDF, savePDF, getPageCount } from './loader';
@@ -11,7 +23,21 @@ import { performReplacementsOnBlock } from './text-replacer';
 import { patchContentStream } from './content-stream-writer';
 import { formatErrorForUser } from './error-handler';
 import { ProgressCallback, ProgressPhase } from './types';
+import type { ParsedContentStream } from './types';
 import { FontRegistry } from './font-registry';
+
+/**
+ * One content stream to process (single stream or one element of Contents array).
+ * ref is set when this came from a PDFArray (so we can preserve it when unmodified).
+ */
+interface ContentStreamEntry {
+  stream: PDFStream;
+  bytes: Uint8Array;
+  ref: PDFRef | null;
+  parsed?: ParsedContentStream;
+  modified?: boolean;
+  patchedBytes?: Uint8Array;
+}
 
 /**
  * Progress phase ranges
@@ -281,12 +307,9 @@ async function processPage(
     contentStream.constructor.name
   );
 
-  // Handle content stream (can be array or single stream)
-  const streamBytes = await getContentStreamBytes(contentStream, page);
-  if (!streamBytes || streamBytes.length === 0) {
-    console.warn(
-      `[PDF Processor] Page ${pageIndex + 1}: No stream bytes extracted (got ${streamBytes?.length || 0} bytes)`
-    );
+  const streamEntries = await getContentStreams(contentStream, page);
+  if (!streamEntries || streamEntries.length === 0) {
+    console.warn(`[PDF Processor] Page ${pageIndex + 1}: No content streams extracted`);
     return {
       totalCount: 0,
       totalMatches: 0,
@@ -297,156 +320,108 @@ async function processPage(
   }
 
   console.log(
-    `[PDF Processor] Page ${pageIndex + 1}: Successfully extracted ${streamBytes.length} bytes from content stream`
+    `[PDF Processor] Page ${pageIndex + 1}: ${streamEntries.length} content stream(s) to process`
   );
 
-  // NEW: Parse with positions, preserve original bytes
-  const parsed = parseContentStreamWithPositions(streamBytes, pageIndex);
-  console.log(
-    `[PDF Processor] Page ${pageIndex + 1}: Parsed ${parsed.allOperations.length} operations (ALL preserved)`
-  );
-  console.log(
-    `[PDF Processor] Page ${pageIndex + 1}: Found ${parsed.textBlocks.length} text blocks`
-  );
-
-  // Extract fonts
   const fontMap = await extractFonts(page);
   console.log(
     `[PDF Processor] Page ${pageIndex + 1}: Found ${fontMap.size} fonts`,
     Array.from(fontMap.keys())
   );
 
-  // Build font registry for cross-font character fallback
   const fontRegistry = new FontRegistry();
   for (const font of fontMap.values()) {
     fontRegistry.addFont(font);
   }
 
-  // Debug: Log font families
-  const families = fontRegistry.getFamilies();
-  console.log(
-    `[PDF Processor] Page ${pageIndex + 1}: Built font registry with ${families.size} font families`
-  );
-  for (const [familyName, family] of families) {
-    console.log(
-      `[PDF Processor]   Family "${familyName}": ${family.fonts.size} fonts (${Array.from(family.fonts.keys()).join(', ')})`
-    );
-  }
+  const blockReplacements = replacements
+    .map((r) => ({ source: r.source, target: r.target }))
+    .sort((a, b) => b.source.length - a.source.length);
 
-  // Process each text block independently
   let totalPageMatches = 0;
   const pageCharacterIssues = new Map<string, Set<string>>();
 
-  // Perform replacements on this block
-  const blockReplacements = replacements
-    .map((r) => ({
-      source: r.source,
-      target: r.target
-    }))
-    .sort((a, b) => b.source.length - a.source.length); // Longer first
+  for (let streamIndex = 0; streamIndex < streamEntries.length; streamIndex++) {
+    const entry = streamEntries[streamIndex];
+    const parsed = parseContentStreamWithPositions(entry.bytes, pageIndex);
+    entry.parsed = parsed;
 
-  for (const block of parsed.textBlocks) {
-    // Extract text from this block only
-    extractTextFromBlock(block, fontMap);
+    for (const block of parsed.textBlocks) {
+      extractTextFromBlock(block, fontMap);
+      const result = performReplacementsOnBlock(block, blockReplacements, fontMap, fontRegistry);
+      totalPageMatches += result.matchCount;
 
-    const result = performReplacementsOnBlock(block, blockReplacements, fontMap, fontRegistry);
+      if (result.modified && result.count > 0) {
+        console.log(
+          `[PDF Processor] Page ${pageIndex + 1} stream ${streamIndex + 1}: Block modified with ${result.count} replacements from ${result.matchCount} matches`
+        );
+      }
 
-    totalPageMatches += result.matchCount;
-
-    // Track stats if modified
-    if (result.modified && result.count > 0) {
-      console.log(
-        `[PDF Processor] Page ${pageIndex + 1}: Block modified with ${result.count} replacements from ${result.matchCount} matches`
-      );
+      if (result.characterIssues.size > 0) {
+        for (const [char, strings] of result.characterIssues) {
+          if (!pageCharacterIssues.has(char)) {
+            pageCharacterIssues.set(char, new Set());
+          }
+          for (const str of strings) {
+            pageCharacterIssues.get(char)!.add(str);
+          }
+        }
+      }
     }
 
-    // Collect character issues
-    if (result.characterIssues.size > 0) {
-      console.warn(
-        `[PDF Processor] Page ${pageIndex + 1}: Block has ${result.characterIssues.size} character encoding issues`
-      );
-      for (const [char, strings] of result.characterIssues) {
-        if (!pageCharacterIssues.has(char)) {
-          pageCharacterIssues.set(char, new Set());
-        }
-        for (const str of strings) {
-          pageCharacterIssues.get(char)!.add(str);
-        }
+    const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
+    if (modifiedBlocks.length > 0) {
+      const patchedBytes = patchContentStream(parsed);
+      if (patchedBytes.length === 0) {
+        console.error(
+          `[PDF Processor] Page ${pageIndex + 1} stream ${streamIndex + 1}: Patched stream is empty, skipping`
+        );
+      } else {
+        entry.modified = true;
+        entry.patchedBytes = patchedBytes;
       }
     }
   }
 
-  // Count total modifications and track per-mapping statistics
-  const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
   let totalCount = 0;
-
-  // Track replacements and matches per source text
-  for (const block of parsed.textBlocks) {
-    for (const element of block.textElements) {
-      // Count both matches and replacements for each source
-      for (const replacement of replacements) {
-        const sourceMatches = element.text.match(
-          new RegExp(replacement.source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
-        );
-        const targetMatches = element.text.match(
-          new RegExp(replacement.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
-        );
-
-        if (sourceMatches) {
-          const matchCount = sourceMatches.length;
-          const matchCounts = matchesByMapping.get(replacement.mappingId)!;
-          matchCounts.set(
-            replacement.source,
-            (matchCounts.get(replacement.source) || 0) + matchCount
+  for (const entry of streamEntries) {
+    const parsed = entry.parsed!;
+    for (const block of parsed.textBlocks) {
+      for (const element of block.textElements) {
+        for (const replacement of replacements) {
+          const sourceMatches = element.text.match(
+            new RegExp(replacement.source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
           );
-        }
-
-        if (targetMatches && block.modified) {
-          const count = targetMatches.length;
-          totalCount += count;
-
-          const replacementCounts = countsByMapping.get(replacement.mappingId)!;
-          replacementCounts.set(
-            replacement.source,
-            (replacementCounts.get(replacement.source) || 0) + count
+          const targetMatches = element.text.match(
+            new RegExp(replacement.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
           );
+          if (sourceMatches) {
+            const matchCounts = matchesByMapping.get(replacement.mappingId)!;
+            matchCounts.set(
+              replacement.source,
+              (matchCounts.get(replacement.source) || 0) + sourceMatches.length
+            );
+          }
+          if (targetMatches && block.modified) {
+            totalCount += targetMatches.length;
+            const replacementCounts = countsByMapping.get(replacement.mappingId)!;
+            replacementCounts.set(
+              replacement.source,
+              (replacementCounts.get(replacement.source) || 0) + targetMatches.length
+            );
+          }
         }
       }
     }
   }
 
-  // Surgical patch - only rebuild modified blocks
-  if (modifiedBlocks.length > 0) {
-    console.log(
-      `[PDF Processor] Page ${pageIndex + 1}: ${modifiedBlocks.length} blocks modified (out of ${parsed.textBlocks.length})`
-    );
-
+  const anyModified = streamEntries.some((e) => e.modified);
+  if (anyModified) {
     try {
-      // NEW: Surgical patch - preserves graphics and unchanged blocks
-      const patchedStream = patchContentStream(parsed);
-
-      // Validate
-      if (patchedStream.length === 0) {
-        console.error('[PDF Processor] ERROR: Patched stream is empty! Skipping update.');
-        return {
-          totalCount: 0,
-          totalMatches: totalPageMatches,
-          countsByMapping,
-          matchesByMapping,
-          characterIssues: pageCharacterIssues
-        };
-      }
-
-      console.log(
-        `[PDF Processor] Patched stream: ${patchedStream.length} bytes (original: ${streamBytes.length} bytes)`
-      );
-
-      // Update page content stream
-      await updatePageContentStream(page, contentStream, patchedStream);
-
-      console.log('[PDF Processor] Successfully updated page content stream (surgical patch)');
+      await updatePageContentStream(page, contentStream, streamEntries);
+      console.log('[PDF Processor] Successfully updated page content stream(s)');
     } catch (error) {
-      console.error('[PDF Processor] Failed to patch content stream:', error);
+      console.error('[PDF Processor] Failed to update content stream(s):', error);
       return {
         totalCount: 0,
         totalMatches: totalPageMatches,
@@ -471,26 +446,26 @@ async function processPage(
 }
 
 /**
- * Get content stream bytes from content stream reference
- * IMPORTANT: Properly decodes streams with filters (FlateDecode, etc.)
+ * Resolve page Contents into an array of stream entries (one per stream).
+ * Single stream -> one entry with ref=null. PDFArray -> one entry per ref, ref preserved.
  */
-async function getContentStreamBytes(
-  contentStream: unknown,
+async function getContentStreams(
+  contentStream: PDFStream | PDFArray,
   page: PDFPage
-): Promise<Uint8Array | null> {
+): Promise<ContentStreamEntry[] | null> {
   try {
-    // Content stream can be a single stream or an array of streams
     if (contentStream instanceof PDFStream) {
-      return await decodeStream(contentStream);
+      const bytes = await decodeStream(contentStream);
+      if (!bytes) return null;
+      return [{ stream: contentStream, bytes, ref: null }];
     }
-
     if (contentStream instanceof PDFArray) {
-      // Multiple content streams - array holds PDFRefs, resolve and concatenate
       const context = page.doc.context;
       const streamRefs = contentStream.asArray();
-      const allBytes: number[] = [];
+      const entries: ContentStreamEntry[] = [];
 
       for (const refOrStream of streamRefs) {
+        const ref = refOrStream instanceof PDFRef ? refOrStream : null;
         const stream: PDFStream | undefined =
           refOrStream instanceof PDFRef
             ? context.lookupMaybe(refOrStream, PDFStream)
@@ -500,25 +475,17 @@ async function getContentStreamBytes(
         if (stream) {
           const bytes = await decodeStream(stream);
           if (bytes) {
-            allBytes.push(...Array.from(bytes));
+            entries.push({ stream, bytes, ref });
           }
         }
       }
 
-      return new Uint8Array(allBytes);
+      return entries.length > 0 ? entries : null;
     }
 
-    // Try to get from page node directly
-    const pageDict = page.node;
-    const contents = pageDict.get(pageDict.context.obj('Contents'));
-
-    if (contents instanceof PDFStream) {
-      return await decodeStream(contents);
-    }
-
-    return null;
+    throw new Error('Unsupported content stream type');
   } catch (error) {
-    console.warn('[PDF Processor] Error getting content stream bytes:', error);
+    console.warn('[PDF Processor] Error getting content streams:', error);
     return null;
   }
 }
@@ -537,68 +504,110 @@ async function decodeStream(stream: PDFStream): Promise<Uint8Array | null> {
 }
 
 /**
- * Update page content stream with new bytes
+ * Re-encode stream bytes with the same filter as the original stream when supported.
+ * Supports single FlateDecode without predictor (DecodeParms Predictor > 1 not implemented).
+ * Returns compressed bytes, or null to write uncompressed.
+ */
+function encodeStreamWithFilter(
+  bytes: Uint8Array,
+  filterVal: unknown,
+  decodeParmsVal: unknown
+): Uint8Array | null {
+  if (!filterVal) return null;
+
+  let isFlateDecode = false;
+  if (filterVal instanceof PDFName) {
+    isFlateDecode = filterVal.asString() === '/FlateDecode';
+  } else if (filterVal instanceof PDFArray && filterVal.size() === 1) {
+    const first = filterVal.lookup(0, PDFName);
+    isFlateDecode = first.asString() === '/FlateDecode';
+  }
+
+  if (!isFlateDecode) return null;
+
+  if (decodeParmsVal instanceof PDFDict) {
+    const predictor = decodeParmsVal.lookupMaybe(PDFName.of('Predictor'), PDFNumber);
+    if (predictor !== undefined && predictor.asNumber() > 1) {
+      return null;
+    }
+  }
+
+  try {
+    const encoded = deflateSync(bytes, { level: 9 });
+    return new Uint8Array(encoded);
+  } catch (error) {
+    console.warn('[PDF Processor] FlateDecode re-encode failed:', error);
+    return null;
+  }
+}
+
+/**
+ * Create a new stream with the given bytes, re-using FlateDecode when the original had it.
+ */
+function createStreamForEntry(
+  context: PDFContext,
+  entry: ContentStreamEntry
+): { stream: PDFRawStream; ref: PDFRef } {
+  const originalDict = entry.stream.dict;
+  const filterVal = originalDict.get(PDFName.of('Filter'));
+  const decodeParmsVal = originalDict.get(PDFName.of('DecodeParms'));
+
+  const encodedBytes = encodeStreamWithFilter(entry.patchedBytes!, filterVal, decodeParmsVal);
+
+  const bytesToWrite = encodedBytes ?? entry.patchedBytes!.slice();
+  const newStream = context.stream(bytesToWrite, {}) as PDFRawStream;
+
+  if (encodedBytes !== null) {
+    newStream.dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+  }
+
+  const ref = context.register(newStream);
+  return { stream: newStream, ref };
+}
+
+/**
+ * Update page Contents from per-stream entries.
+ * Single stream: replace with one ref (new stream if modified).
+ * PDFArray: build array of refs — new stream for modified entries, original ref for unmodified.
  */
 async function updatePageContentStream(
   page: PDFPage,
-  originalStream: unknown,
-  newBytes: Uint8Array
+  originalStream: PDFStream | PDFArray,
+  streamEntries: ContentStreamEntry[]
 ): Promise<void> {
-  try {
-    const context = page.doc.context;
+  const context = page.doc.context;
+  const contentsKey = context.obj('Contents');
 
-    console.log(`[PDF Processor] Updating content stream with ${newBytes.length} bytes`);
-    console.log(`[PDF Processor] Original stream type: ${originalStream?.constructor.name}`);
+  if (originalStream instanceof PDFStream) {
+    const entry = streamEntries[0];
+    if (!entry.modified || !entry.patchedBytes) return;
 
-    // IMPORTANT: We need to properly create and register the stream
-    // pdf-lib's context.stream() creates a raw stream that needs to be registered
+    const { ref } = createStreamForEntry(context, entry);
+    page.node.set(contentsKey, ref);
+    console.log(
+      `[PDF Processor] Replaced single content stream with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
+    );
+    return;
+  }
 
-    // Method 1: If original was a single stream, try to modify it in place
-    if (originalStream instanceof PDFStream) {
-      try {
-        // Replace the stream contents directly
-        const streamDict = (originalStream as any).dict;
-
-        // Remove Filter and DecodeParms if they exist (we're writing uncompressed)
-        if (streamDict) {
-          streamDict.delete(context.obj('Filter'));
-          streamDict.delete(context.obj('DecodeParms'));
-        }
-
-        // Update the stream contents
-        (originalStream as any).contents = newBytes;
-
-        // Update Length
-        if (streamDict) {
-          streamDict.set(context.obj('Length'), context.obj(newBytes.length));
-        }
-
-        console.log('[PDF Processor] Updated stream in place');
-        return;
-      } catch (inPlaceError) {
-        console.warn(
-          '[PDF Processor] Failed to update in place, will create new stream:',
-          inPlaceError
+  if (originalStream instanceof PDFArray) {
+    const newRefs: PDFRef[] = [];
+    for (let i = 0; i < streamEntries.length; i++) {
+      const entry = streamEntries[i];
+      if (entry.modified && entry.patchedBytes) {
+        const { ref } = createStreamForEntry(context, entry);
+        newRefs.push(ref);
+        console.log(
+          `[PDF Processor] Stream ${i + 1}/${streamEntries.length}: replaced with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
         );
+      } else {
+        if (entry.ref === null) {
+          throw new Error(`Stream ${i + 1}: no ref to preserve and stream was not modified`);
+        }
+        newRefs.push(entry.ref);
       }
     }
-
-    // Method 2: Create a new stream and replace the Contents entry
-    // This is safer but may break some PDF structures
-    const newStream = context.stream(newBytes, {
-      // Don't add filters - write uncompressed for now
-    });
-
-    // Register the stream in the context
-    const streamRef = context.register(newStream);
-
-    // Update page's Contents entry with the new stream reference
-    const contentsKey = context.obj('Contents');
-    page.node.set(contentsKey, streamRef);
-
-    console.log('[PDF Processor] Created new stream and updated page reference');
-  } catch (error) {
-    console.error('[PDF Processor] Error updating content stream:', error);
-    throw error;
+    page.node.set(contentsKey, context.obj(newRefs));
+    console.log(`[PDF Processor] Set Contents to array of ${newRefs.length} stream(s)`);
   }
 }

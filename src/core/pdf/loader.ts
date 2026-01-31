@@ -12,7 +12,8 @@ export async function loadPDF(filePath: string): Promise<PDFDocument> {
     const pdfBytes = await readFile(filePath);
     const pdfDoc = await PDFDocument.load(pdfBytes, {
       ignoreEncryption: true,
-      updateMetadata: false
+      updateMetadata: false,
+      capNumbers: true
     });
     return pdfDoc;
   } catch (error) {
@@ -29,7 +30,7 @@ export async function loadPDF(filePath: string): Promise<PDFDocument> {
 export async function savePDF(pdfDoc: PDFDocument, outputPath: string): Promise<void> {
   try {
     const { writeFile } = await import('fs/promises');
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     await writeFile(outputPath, pdfBytes);
   } catch (error) {
     if (error instanceof Error) {
