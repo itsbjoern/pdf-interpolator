@@ -10,8 +10,7 @@ import {
   PDFDict,
   PDFNumber,
   decodePDFRawStream,
-  PDFRawStream,
-  PDFContext
+  PDFRawStream
 } from 'pdf-lib';
 import { SheetMapping, ProcessResult, ReplacementStats, ProcessingWarning } from '@shared/types';
 import { readSpreadsheet } from '@core/spreadsheet/reader';
@@ -418,7 +417,7 @@ async function processPage(
   const anyModified = streamEntries.some((e) => e.modified);
   if (anyModified) {
     try {
-      await updatePageContentStream(page, contentStream, streamEntries);
+      await updatePageContentStream(contentStream, streamEntries);
       console.log('[PDF Processor] Successfully updated page content stream(s)');
     } catch (error) {
       console.error('[PDF Processor] Failed to update content stream(s):', error);
@@ -542,72 +541,62 @@ function encodeStreamWithFilter(
 }
 
 /**
- * Create a new stream with the given bytes, re-using FlateDecode when the original had it.
+ * Update an existing stream in place with new bytes, re-using FlateDecode when the original had it.
  */
-function createStreamForEntry(
-  context: PDFContext,
-  entry: ContentStreamEntry
-): { stream: PDFRawStream; ref: PDFRef } {
+function updateStreamInPlace(entry: ContentStreamEntry): void {
   const originalDict = entry.stream.dict;
   const filterVal = originalDict.get(PDFName.of('Filter'));
   const decodeParmsVal = originalDict.get(PDFName.of('DecodeParms'));
 
   const encodedBytes = encodeStreamWithFilter(entry.patchedBytes!, filterVal, decodeParmsVal);
+  const bytesToWrite = encodedBytes ?? entry.patchedBytes!;
 
-  const bytesToWrite = encodedBytes ?? entry.patchedBytes!.slice();
-  const newStream = context.stream(bytesToWrite, {}) as PDFRawStream;
+  // Update the stream contents in place
+  const rawStream = entry.stream as PDFRawStream;
+  (rawStream as any).contents = bytesToWrite;
 
+  // Update the Length entry in the dictionary
+  rawStream.dict.set(PDFName.of('Length'), PDFNumber.of(bytesToWrite.length));
+
+  // Ensure Filter is set correctly
   if (encodedBytes !== null) {
-    newStream.dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+    rawStream.dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+  } else {
+    // Remove Filter if we're writing uncompressed
+    rawStream.dict.delete(PDFName.of('Filter'));
+    rawStream.dict.delete(PDFName.of('DecodeParms'));
   }
-
-  const ref = context.register(newStream);
-  return { stream: newStream, ref };
 }
 
 /**
  * Update page Contents from per-stream entries.
- * Single stream: replace with one ref (new stream if modified).
- * PDFArray: build array of refs — new stream for modified entries, original ref for unmodified.
+ * Modifies streams in place, preserving original object references.
  */
 async function updatePageContentStream(
-  page: PDFPage,
   originalStream: PDFStream | PDFArray,
   streamEntries: ContentStreamEntry[]
 ): Promise<void> {
-  const context = page.doc.context;
-  const contentsKey = context.obj('Contents');
-
   if (originalStream instanceof PDFStream) {
     const entry = streamEntries[0];
     if (!entry.modified || !entry.patchedBytes) return;
 
-    const { ref } = createStreamForEntry(context, entry);
-    page.node.set(contentsKey, ref);
+    updateStreamInPlace(entry);
     console.log(
-      `[PDF Processor] Replaced single content stream with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
+      `[PDF Processor] Updated content stream in place with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
     );
     return;
   }
 
   if (originalStream instanceof PDFArray) {
-    const newRefs: PDFRef[] = [];
     for (let i = 0; i < streamEntries.length; i++) {
       const entry = streamEntries[i];
       if (entry.modified && entry.patchedBytes) {
-        const { ref } = createStreamForEntry(context, entry);
-        newRefs.push(ref);
+        updateStreamInPlace(entry);
         console.log(
-          `[PDF Processor] Stream ${i + 1}/${streamEntries.length}: replaced with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
+          `[PDF Processor] Stream ${i + 1}/${streamEntries.length}: updated in place with ${entry.patchedBytes.length} bytes (re-encoded with original filter when applicable)`
         );
-      } else {
-        if (entry.ref === null) {
-          throw new Error(`Stream ${i + 1}: no ref to preserve and stream was not modified`);
-        }
-        newRefs.push(entry.ref);
       }
     }
-    page.node.set(contentsKey, context.obj(newRefs));
-    console.log(`[PDF Processor] Set Contents to array of ${newRefs.length} stream(s)`);
+    console.log(`[PDF Processor] Updated ${streamEntries.filter(e => e.modified).length} of ${streamEntries.length} stream(s) in place`);
   }
 }
