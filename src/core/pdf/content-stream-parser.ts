@@ -316,6 +316,8 @@ function parseTokens(tokens: TokenWithPos[]): PDFOperation[] {
       const value = parseValue(token);
       if (value !== null) {
         stack.push(value);
+      } else {
+        console.error(`[Content Parser] Failed to parse value "${token}"`);
       }
     }
   }
