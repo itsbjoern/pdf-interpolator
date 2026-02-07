@@ -39,6 +39,8 @@ export const CHAR_BYTES = {
   LINE_FEED: 0x0a,
   OPEN_BRACKET: 0x5b,
   CLOSE_BRACKET: 0x5d,
+  OPEN_PAREN: 0x28,
+  CLOSE_PAREN: 0x29,
   LESS_THAN: 0x3c,
   GREATER_THAN: 0x3e
 } as const;

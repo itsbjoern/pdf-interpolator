@@ -24,7 +24,15 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
   // Rebuild entire stream from all operations
   const byteArrays: Uint8Array[] = [];
 
+  let withinBT = false;
   for (const operation of parsed.allOperations) {
+    if (operation.operator === 'BT') {
+      withinBT = true;
+    }
+    if (operation.operator === 'ET') {
+      withinBT = false;
+    }
+
     const blockInfo = operationToBlock.get(operation);
     if (!blockInfo?.block.operationReplacements) {
       byteArrays.push(serializeOperation(operation));
@@ -50,6 +58,20 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
     }
   }
 
+  if (withinBT) {
+    byteArrays.push(
+      serializeOperation({
+        operator: 'TJ',
+        operands: [new Uint8Array([CHAR_BYTES.SPACE])],
+        startIndex: 0,
+        endIndex: 0
+      })
+    );
+    byteArrays.push(
+      serializeOperation({ operator: 'ET', operands: [], startIndex: 0, endIndex: 0 })
+    );
+  }
+
   // Concatenate all byte arrays
   const totalLength = byteArrays.reduce((sum, arr) => sum + arr.length, 0);
   const result = new Uint8Array(totalLength);
@@ -67,11 +89,26 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
 function serializeOperation(operation: PDFOperation): Uint8Array {
   const parts: Uint8Array[] = [];
 
-  for (const operand of operation.operands) {
+  for (let i = 0; i < operation.operands.length; i++) {
+    const operand = operation.operands[i];
     const serialized = serializeValueToBytes(operand);
     if (serialized.length > 0) {
       parts.push(serialized);
-      parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+
+      // Only add space if next token needs it (not before delimiters or at end)
+      const needsSpace = i < operation.operands.length - 1 || operation.operator.length > 0;
+      if (needsSpace && !endsWithDelimiter(serialized)) {
+        // Check if next operand starts with delimiter
+        if (i < operation.operands.length - 1) {
+          const nextSerialized = serializeValueToBytes(operation.operands[i + 1]);
+          if (!startsWithDelimiter(nextSerialized)) {
+            parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+          }
+        } else {
+          // Space before operator
+          parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+        }
+      }
     }
   }
 
@@ -157,13 +194,21 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
         keyBytes[j] = key.charCodeAt(j);
       }
       parts.push(keyBytes);
-      parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
 
-      parts.push(serializeValueToBytes(val));
+      // Add space after key only if value doesn't start with delimiter
+      const valBytes = serializeValueToBytes(val);
+      if (!startsWithDelimiter(valBytes)) {
+        parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+      }
+
+      parts.push(valBytes);
 
       // Add space between key-value pairs (except after last pair)
+      // Only needed if value doesn't end with delimiter or next key doesn't start with /
       if (i < keys.length - 1) {
-        parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+        if (!endsWithDelimiter(valBytes)) {
+          parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+        }
       }
     }
 
@@ -186,22 +231,87 @@ function serializeValueToBytes(value: PDFValue): Uint8Array {
 }
 
 /**
- * Convert bytes to PDF hex string notation
- * Returns bytes directly to avoid JavaScript string encoding issues
- * Uses <...> notation instead of (...) to match original PDF encoding
+ * Convert bytes to PDF string notation
+ * Prefers literal notation (en-US) for readability and compatibility
+ * Falls back to hex notation <...> only when necessary (special chars, binary data)
  */
 function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
-  const result: number[] = [];
-
-  result.push(CHAR_BYTES.LESS_THAN);
-
+  // Check if we can use literal notation: printable ASCII except ( ) \
+  let canUseLiteral = true;
   for (const byte of bytes) {
-    const hex = byte.toString(16).toUpperCase().padStart(2, '0');
-    result.push(hex.charCodeAt(0), hex.charCodeAt(1));
+    // Printable ASCII range (0x20-0x7E) excluding special chars
+    if (byte < 0x20 || byte > 0x7e) {
+      canUseLiteral = false;
+      break;
+    }
+    // Check for characters that need escaping in literal strings
+    if (byte === 0x28 || byte === 0x29 || byte === 0x5c) {
+      // ( ) \ need escaping, but we can still use literal notation
+      continue;
+    }
   }
 
-  result.push(CHAR_BYTES.GREATER_THAN);
+  const result: number[] = [];
 
-  const resultBytes = new Uint8Array(result);
-  return resultBytes;
+  if (canUseLiteral) {
+    // Use literal notation: (en-US)
+    result.push(CHAR_BYTES.OPEN_PAREN);
+
+    for (const byte of bytes) {
+      // Escape special characters
+      if (byte === 0x28 || byte === 0x29 || byte === 0x5c) {
+        // Escape (, ), and \
+        result.push(0x5c); // backslash
+      }
+      result.push(byte);
+    }
+
+    result.push(CHAR_BYTES.CLOSE_PAREN);
+  } else {
+    // Use hex notation: <656E2D5553>
+    result.push(CHAR_BYTES.LESS_THAN);
+
+    for (const byte of bytes) {
+      const hex = byte.toString(16).toUpperCase().padStart(2, '0');
+      result.push(hex.charCodeAt(0), hex.charCodeAt(1));
+    }
+
+    result.push(CHAR_BYTES.GREATER_THAN);
+  }
+
+  return new Uint8Array(result);
+}
+
+/**
+ * Check if a byte array starts with a PDF delimiter
+ */
+function startsWithDelimiter(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return false;
+  const first = bytes[0];
+  // Check for <, [, (, and << (need to check two bytes for <<)
+  if (
+    first === CHAR_BYTES.LESS_THAN ||
+    first === CHAR_BYTES.OPEN_BRACKET ||
+    first === CHAR_BYTES.OPEN_PAREN
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Check if a byte array ends with a PDF delimiter
+ */
+function endsWithDelimiter(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return false;
+  const last = bytes[bytes.length - 1];
+  // Check for >, ], ), and >> (need to check two bytes for >>)
+  if (
+    last === CHAR_BYTES.GREATER_THAN ||
+    last === CHAR_BYTES.CLOSE_BRACKET ||
+    last === CHAR_BYTES.CLOSE_PAREN
+  ) {
+    return true;
+  }
+  return false;
 }

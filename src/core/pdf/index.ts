@@ -674,6 +674,11 @@ async function processXObject(
   }
 
   const parsed = parseContentStreamWithPositions(xobjectBytes, context.pageIndex);
+
+  if (parsed.textBlocks.length === 0) {
+    return { modifications, characterIssues, matchCount, replacementCount };
+  }
+
   const xobjectFonts = await extractXObjectFonts(xobjectRef.resources, xobjectRef.name);
   const xobjectFontRegistry = new FontRegistry();
 

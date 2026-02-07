@@ -371,7 +371,7 @@ export function encodeTextWithFallback(
       const fallbackFont = fontRegistry.findFallbackFont(char, currentFont);
 
       if (!fallbackFont) {
-        console.warn(
+        console.log(
           `[Font Handler] No fallback font found for character "${char}" in family ${currentFont.baseFont}`
         );
         if (!missingCharacters.includes(char)) {

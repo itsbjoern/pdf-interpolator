@@ -1,6 +1,6 @@
 import { encodeTextWithFallback } from './font-handler';
 import type { FontRegistry } from './font-registry';
-import type { PDFOperation, ReplacementEntry, TextBlock } from './types';
+import type { PDFOperation, ReplacementEntry, TextBlock, TextElement } from './types';
 
 /**
  * Character issue tracking
@@ -67,8 +67,6 @@ export function performReplacementsOnBlock(
     };
   }
 
-  console.log('fullText in block:', fullText);
-
   // Track which elements have been processed to avoid duplicate replacements
   const processedElements = new Set<number>();
 
@@ -89,8 +87,6 @@ export function performReplacementsOnBlock(
     while ((match = regex.exec(fullText)) !== null) {
       matches.push({ start: match.index, end: match.index + source.length });
     }
-
-    totalMatches += matches.length;
 
     // Process each match
     for (const matchPos of matches) {
@@ -122,6 +118,8 @@ export function performReplacementsOnBlock(
       for (let i = startElemIdx; i <= endElemIdx; i++) {
         processedElements.add(i);
       }
+
+      totalMatches++; // only count matches we'll actually process
 
       // Case 1: Match is within a single element
       if (startElemIdx === endElemIdx) {
@@ -173,7 +171,7 @@ export function performReplacementsOnBlock(
  * Replace text within a single element
  */
 function replaceSingleElement(
-  element: any,
+  element: TextElement,
   source: string,
   target: string,
   block: TextBlock,
@@ -192,6 +190,7 @@ function replaceSingleElement(
         characterIssues.get(char)!.add(newText);
       }
     }
+    console.log('[Text Replacer] Failed to encode text', encodedText.missingCharacters);
     return false;
   }
 
@@ -311,6 +310,7 @@ function replaceAcrossElements(
         characterIssues.get(char)!.add(newText);
       }
     }
+    console.log('[Text Replacer] Failed to encode text', encodedText.missingCharacters);
     return false;
   }
 

@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { PDFDocument } from 'pdf-lib';
+import { PDFArray, PDFDocument, PDFString } from 'pdf-lib';
 import { PDFLoadError } from './error-handler';
 
 /**
@@ -27,7 +27,12 @@ export async function loadPDF(filePath: string): Promise<PDFDocument> {
  */
 export async function savePDF(pdfDoc: PDFDocument, outputPath: string): Promise<void> {
   try {
-    const pdfBytes = await pdfDoc.save();
+    const idArray = PDFArray.withContext(pdfDoc.context);
+    idArray.push(PDFString.of('00000000000000000000000000000000'));
+    idArray.push(PDFString.of('00000000000000000000000000000000'));
+    pdfDoc.context.trailerInfo.ID = idArray;
+
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     await writeFile(outputPath, pdfBytes);
   } catch (error) {
     if (error instanceof Error) {
