@@ -53,6 +53,7 @@ export interface TextElement {
   operation: PDFOperation;
   font: FontInfo;
   operandIndex?: number; // For TJ arrays, which operand this text came from
+  combinedOperations?: PDFOperation[]; // If this element combines multiple consecutive operations
 }
 
 /**

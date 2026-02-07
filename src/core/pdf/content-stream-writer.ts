@@ -32,11 +32,19 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
     }
 
     const replacements = blockInfo.block.operationReplacements.get(blockInfo.localIndex);
-    if (!replacements || replacements.length === 0) {
+
+    // No replacement entry = use original operation
+    if (replacements === undefined) {
       byteArrays.push(serializeOperation(operation));
       continue;
     }
 
+    // Empty array = remove this operation (don't serialize)
+    if (replacements.length === 0) {
+      continue;
+    }
+
+    // Non-empty array = replace with new operations
     for (const replOp of replacements) {
       byteArrays.push(serializeOperation(replOp));
     }

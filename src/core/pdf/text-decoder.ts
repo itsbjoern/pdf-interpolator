@@ -2,8 +2,16 @@ import { decodeText } from './font-handler';
 import type { FontInfo, TextBlock, TextElement } from './types';
 
 /**
+ * Check if an operator is a text-positioning operator
+ */
+function isPositioningOperator(operator: string): boolean {
+  return operator === 'Td' || operator === 'TD' || operator === 'Tm' || operator === 'T*';
+}
+
+/**
  * Extract text from a single TextBlock (NEW surgical approach)
  * Processes only operations within this block and updates the block in-place
+ * Combines consecutive text elements with the same font (no positioning operators between them)
  */
 export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, FontInfo>): void {
   const textElements: TextElement[] = [];
@@ -11,7 +19,11 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
   let currentFont: FontInfo | null = null;
   let currentFontSize = 12; // Default font size
 
-  for (const operation of block.operations) {
+  // First pass: extract individual text segments
+  const segments: Array<{ text: string; operation: any; font: FontInfo; index: number }> = [];
+
+  for (let i = 0; i < block.operations.length; i++) {
+    const operation = block.operations[i];
     const { operator, operands } = operation;
 
     // Tf: Set text font and size
@@ -38,11 +50,7 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       const textBytes = operands[0];
       if (textBytes instanceof Uint8Array) {
         const text = decodeText(textBytes, currentFont);
-        textElements.push({
-          text,
-          operation,
-          font: currentFont
-        });
+        segments.push({ text, operation, font: currentFont, index: i });
       }
       continue;
     }
@@ -53,19 +61,15 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       if (Array.isArray(array)) {
         let combinedText = '';
 
-        for (let i = 0; i < array.length; i++) {
-          const item = array[i];
+        for (let j = 0; j < array.length; j++) {
+          const item = array[j];
           if (item instanceof Uint8Array) {
             combinedText += decodeText(item, currentFont);
           }
         }
 
         if (combinedText) {
-          textElements.push({
-            text: combinedText,
-            operation,
-            font: currentFont
-          });
+          segments.push({ text: combinedText, operation, font: currentFont, index: i });
         }
       }
       continue;
@@ -76,11 +80,7 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       const textBytes = operands[0];
       if (textBytes instanceof Uint8Array) {
         const text = decodeText(textBytes, currentFont);
-        textElements.push({
-          text,
-          operation,
-          font: currentFont
-        });
+        segments.push({ text, operation, font: currentFont, index: i });
       }
       continue;
     }
@@ -90,13 +90,57 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       const textBytes = operands[2];
       if (textBytes instanceof Uint8Array) {
         const text = decodeText(textBytes, currentFont);
-        textElements.push({
-          text,
-          operation,
-          font: currentFont
-        });
+        segments.push({ text, operation, font: currentFont, index: i });
       }
     }
+  }
+
+  // Second pass: combine consecutive segments with same font
+  let i = 0;
+  while (i < segments.length) {
+    const firstSegment = segments[i];
+    let combinedText = firstSegment.text;
+    const operations = [firstSegment.operation];
+    let j = i + 1;
+
+    // Look ahead to combine consecutive same-font text
+    while (j < segments.length) {
+      const nextSegment = segments[j];
+
+      // Check if next segment has same font
+      if (nextSegment.font.name !== firstSegment.font.name) {
+        break;
+      }
+
+      // Check if there's a positioning operator between them
+      let hasPositioningBetween = false;
+      for (let k = segments[j - 1].index + 1; k < nextSegment.index; k++) {
+        const op = block.operations[k];
+        if (isPositioningOperator(op.operator)) {
+          hasPositioningBetween = true;
+          break;
+        }
+      }
+
+      if (hasPositioningBetween) {
+        break;
+      }
+
+      // Combine this segment
+      combinedText += nextSegment.text;
+      operations.push(nextSegment.operation);
+      j++;
+    }
+
+    // Create text element (might be single or combined)
+    textElements.push({
+      text: combinedText,
+      operation: firstSegment.operation, // Keep reference to first operation
+      font: firstSegment.font,
+      combinedOperations: operations.length > 1 ? operations : undefined
+    });
+
+    i = j;
   }
 
   block.textElements = textElements;
