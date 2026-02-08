@@ -52,7 +52,7 @@ export async function loadPDF(filePath: string): Promise<PDFDocument> {
 
     // One write/load cycle to ensure the PDF is fully loaded
     const fixedBytes = await pdfDoc.save({ useObjectStreams: false });
-    await writeFile('/Users/bjoern/Downloads/clean_6.pdf', fixedBytes);
+    await writeFile('/Users/bjoern/Downloads/clean_8.pdf', fixedBytes);
     const fixedPdfDoc = await PDFDocument.load(fixedBytes);
 
     return fixedPdfDoc;

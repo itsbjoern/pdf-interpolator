@@ -132,9 +132,15 @@ export function extractTextFromBlock(block: TextBlock, fontMap: Map<string, Font
       j++;
     }
 
+    const finalText = combinedText.trim();
+    if (finalText.length === 0) {
+      i = j;
+      continue;
+    }
+
     // Create text element (might be single or combined)
     textElements.push({
-      text: combinedText,
+      text: finalText,
       operation: firstSegment.operation, // Keep reference to first operation
       font: firstSegment.font,
       combinedOperations: operations.length > 1 ? operations : undefined
