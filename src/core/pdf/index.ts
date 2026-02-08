@@ -329,15 +329,6 @@ async function processPage(
       const result = performReplacementsOnBlock(block, blockReplacements, fontRegistry);
       totalPageMatches += result.matchCount;
 
-      // Process marked content after text replacement
-      const mcStats = processMarkedContent(block);
-      if (mcStats.totalPairs > 0) {
-        console.log(
-          `[Page ${pageIndex + 1} Stream ${streamIndex + 1}] Marked Content: ` +
-            `${mcStats.emptyRemoved} empty removed, ${mcStats.actualTextUpdated} ActualText updated`
-        );
-      }
-
       if (result.characterIssues.size > 0) {
         for (const [char, strings] of result.characterIssues) {
           if (!pageCharacterIssues.has(char)) {
@@ -350,8 +341,17 @@ async function processPage(
       }
     }
 
+    // Remove all BDC/EMC from entire stream (all operations, not just text blocks)
+    const mcStats = processMarkedContent(parsed);
+    if (mcStats.removed > 0) {
+      console.log(
+        `[Page ${pageIndex + 1} Stream ${streamIndex + 1}] Marked Content: ${mcStats.removed} BDC/EMC operators removed`
+      );
+    }
+
     const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
-    if (modifiedBlocks.length > 0) {
+    const hasGlobalRemovals = (parsed.globalOperationReplacements?.size ?? 0) > 0;
+    if (modifiedBlocks.length > 0 || hasGlobalRemovals) {
       const patchedBytes = patchContentStream(parsed);
       if (patchedBytes.length === 0) {
         console.error(
@@ -804,15 +804,6 @@ async function processXObject(
       replacementCount += result.count;
     }
 
-    // Process marked content in XObjects
-    const mcStats = processMarkedContent(block);
-    if (mcStats.totalPairs > 0) {
-      console.log(
-        `[XObject "${xobjectRef.name}"] Marked Content: ` +
-          `${mcStats.emptyRemoved} empty removed, ${mcStats.actualTextUpdated} ActualText updated`
-      );
-    }
-
     // Merge character issues
     for (const [char, strings] of result.characterIssues) {
       if (!characterIssues.has(char)) {
@@ -824,8 +815,17 @@ async function processXObject(
     }
   }
 
+  // Remove all BDC/EMC from entire XObject stream (all operations, not just text blocks)
+  const mcStats = processMarkedContent(parsed);
+  if (mcStats.removed > 0) {
+    console.log(
+      `[XObject "${xobjectRef.name}"] Marked Content: ${mcStats.removed} BDC/EMC operators removed`
+    );
+  }
+
   const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
-  if (modifiedBlocks.length > 0) {
+  const hasGlobalRemovals = (parsed.globalOperationReplacements?.size ?? 0) > 0;
+  if (modifiedBlocks.length > 0 || hasGlobalRemovals) {
     const patchedBytes = patchContentStream(parsed);
 
     if (patchedBytes.length === 0) {
@@ -998,14 +998,6 @@ async function updatePageContentStream(
     if (entry.isArrayConcatenation) {
       if (entry.modified && entry.patchedBytes) {
         await replaceArrayWithSingleStream(page, entry);
-      }
-    } else {
-      // Backward compatibility: multiple independent entries (shouldn't happen anymore)
-      for (let i = 0; i < streamEntries.length; i++) {
-        const e = streamEntries[i];
-        if (e.modified && e.patchedBytes) {
-          updateStreamInPlace(e);
-        }
       }
     }
   }

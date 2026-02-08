@@ -257,6 +257,9 @@ function replaceSingleElement(
       return true;
     }
   } else {
+    // When updating in-place, set operator too: original may be TJ (array) but we now have
+    // a single string → must use Tj so output is [string] Tj, not [string] TJ (invalid).
+    element.operation.operator = operations[0].operator;
     element.operation.operands = operations[0].operands;
 
     if (element.combinedOperations && element.combinedOperations.length > 1) {

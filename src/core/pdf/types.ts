@@ -116,6 +116,8 @@ export interface ParsedContentStream {
   originalBytes: Uint8Array; // Original stream bytes (PRESERVED)
   allOperations: PDFOperation[]; // All operations (including graphics)
   textBlocks: TextBlock[]; // Only the BT/ET blocks
+  /** Index (in allOperations) → replacement ops; [] = remove. Applied to entire stream. */
+  globalOperationReplacements?: Map<number, PDFOperation[]>;
 }
 
 /**

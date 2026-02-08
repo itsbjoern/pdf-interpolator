@@ -8,8 +8,9 @@ import type { ParsedContentStream, PDFOperation, PDFValue, TextBlock } from './t
  */
 export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
   const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
+  const hasGlobalRemovals = (parsed.globalOperationReplacements?.size ?? 0) > 0;
 
-  if (modifiedBlocks.length === 0) {
+  if (modifiedBlocks.length === 0 && !hasGlobalRemovals) {
     return parsed.originalBytes;
   }
 
@@ -24,13 +25,17 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
   // Rebuild entire stream from all operations
   const byteArrays: Uint8Array[] = [];
 
-  let withinBT = false;
-  for (const operation of parsed.allOperations) {
-    if (operation.operator === 'BT') {
-      withinBT = true;
-    }
-    if (operation.operator === 'ET') {
-      withinBT = false;
+  for (let i = 0; i < parsed.allOperations.length; i++) {
+    const operation = parsed.allOperations[i];
+
+    // Global replacements (e.g. BDC/EMC removal) apply to all operations
+    const globalRepl = parsed.globalOperationReplacements?.get(i);
+    if (globalRepl !== undefined) {
+      if (globalRepl.length === 0) continue;
+      for (const replOp of globalRepl) {
+        byteArrays.push(serializeOperation(replOp));
+      }
+      continue;
     }
 
     const blockInfo = operationToBlock.get(operation);
@@ -56,20 +61,6 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
     for (const replOp of replacements) {
       byteArrays.push(serializeOperation(replOp));
     }
-  }
-
-  if (withinBT) {
-    byteArrays.push(
-      serializeOperation({
-        operator: 'TJ',
-        operands: [new Uint8Array([CHAR_BYTES.SPACE])],
-        startIndex: 0,
-        endIndex: 0
-      })
-    );
-    byteArrays.push(
-      serializeOperation({ operator: 'ET', operands: [], startIndex: 0, endIndex: 0 })
-    );
   }
 
   // Concatenate all byte arrays
@@ -117,7 +108,18 @@ function serializeOperation(operation: PDFOperation): Uint8Array {
     opBytes[i] = operation.operator.charCodeAt(i);
   }
   parts.push(opBytes);
-  if (operation.operator === 'W') {
+
+  if (
+    operation.operator === 'Tc' ||
+    operation.operator === 'Tw' ||
+    operation.operator === 'Ts' ||
+    operation.operator === 'Tz' ||
+    operation.operator === 'Tr'
+  ) {
+    parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+  }
+
+  if (operation.operator === 'W' || operation.operator === 'cs') {
     parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
   } else {
     parts.push(new Uint8Array([CHAR_BYTES.CARRIAGE_RETURN, CHAR_BYTES.LINE_FEED]));
@@ -267,6 +269,7 @@ function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
         // Escape (, ), and \
         result.push(0x5c); // backslash
       }
+
       result.push(byte);
     }
 
@@ -281,6 +284,15 @@ function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
     }
 
     result.push(CHAR_BYTES.GREATER_THAN);
+
+    // Use octal notation: \065\065\065\065\065
+    // result.push(CHAR_BYTES.OPEN_PAREN);
+    // for (const byte of bytes) {
+    //   result.push(CHAR_BYTES.BACKSLASH);
+    //   const octal = byte.toString(8).padStart(3, '0');
+    //   result.push(octal.charCodeAt(0), octal.charCodeAt(1), octal.charCodeAt(2));
+    // }
+    // result.push(CHAR_BYTES.CLOSE_PAREN);
   }
 
   return new Uint8Array(result);

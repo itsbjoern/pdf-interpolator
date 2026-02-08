@@ -34,6 +34,7 @@ export const SUPPORTED_SPREADSHEET_EXTENSIONS = [
 export const SUPPORTED_PDF_EXTENSIONS = [{ name: 'PDF Files', extensions: ['pdf'] }];
 
 export const CHAR_BYTES = {
+  BACKSLASH: 0x5c,
   SPACE: 0x20,
   CARRIAGE_RETURN: 0x0d,
   LINE_FEED: 0x0a,
