@@ -26,7 +26,6 @@ import { FontRegistry } from './font-registry';
 import { loadPDF, savePDF } from './pdf-handler';
 import { extractTextFromBlock } from './text-decoder';
 import { performReplacementsOnBlock } from './text-replacer';
-import { processMarkedContent } from './marked-content-handler';
 import type {
   FontInfo,
   ParsedContentStream,
@@ -341,17 +340,8 @@ async function processPage(
       }
     }
 
-    // Remove all BDC/EMC from entire stream (all operations, not just text blocks)
-    const mcStats = processMarkedContent(parsed);
-    if (mcStats.removed > 0) {
-      console.log(
-        `[Page ${pageIndex + 1} Stream ${streamIndex + 1}] Marked Content: ${mcStats.removed} BDC/EMC operators removed`
-      );
-    }
-
     const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
-    const hasGlobalRemovals = (parsed.globalOperationReplacements?.size ?? 0) > 0;
-    if (modifiedBlocks.length > 0 || hasGlobalRemovals) {
+    if (modifiedBlocks.length > 0) {
       const patchedBytes = patchContentStream(parsed);
       if (patchedBytes.length === 0) {
         console.error(
@@ -815,17 +805,8 @@ async function processXObject(
     }
   }
 
-  // Remove all BDC/EMC from entire XObject stream (all operations, not just text blocks)
-  const mcStats = processMarkedContent(parsed);
-  if (mcStats.removed > 0) {
-    console.log(
-      `[XObject "${xobjectRef.name}"] Marked Content: ${mcStats.removed} BDC/EMC operators removed`
-    );
-  }
-
   const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
-  const hasGlobalRemovals = (parsed.globalOperationReplacements?.size ?? 0) > 0;
-  if (modifiedBlocks.length > 0 || hasGlobalRemovals) {
+  if (modifiedBlocks.length > 0) {
     const patchedBytes = patchContentStream(parsed);
 
     if (patchedBytes.length === 0) {

@@ -8,9 +8,8 @@ import type { ParsedContentStream, PDFOperation, PDFValue, TextBlock } from './t
  */
 export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
   const modifiedBlocks = parsed.textBlocks.filter((b) => b.modified);
-  const hasGlobalRemovals = (parsed.globalOperationReplacements?.size ?? 0) > 0;
 
-  if (modifiedBlocks.length === 0 && !hasGlobalRemovals) {
+  if (modifiedBlocks.length === 0) {
     return parsed.originalBytes;
   }
 
@@ -27,16 +26,6 @@ export function patchContentStream(parsed: ParsedContentStream): Uint8Array {
 
   for (let i = 0; i < parsed.allOperations.length; i++) {
     const operation = parsed.allOperations[i];
-
-    // Global replacements (e.g. BDC/EMC removal) apply to all operations
-    const globalRepl = parsed.globalOperationReplacements?.get(i);
-    if (globalRepl !== undefined) {
-      if (globalRepl.length === 0) continue;
-      for (const replOp of globalRepl) {
-        byteArrays.push(serializeOperation(replOp));
-      }
-      continue;
-    }
 
     const blockInfo = operationToBlock.get(operation);
     if (!blockInfo?.block.operationReplacements) {
