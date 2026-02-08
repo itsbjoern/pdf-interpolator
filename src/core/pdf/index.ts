@@ -26,6 +26,7 @@ import { FontRegistry } from './font-registry';
 import { loadPDF, savePDF } from './pdf-handler';
 import { extractTextFromBlock } from './text-decoder';
 import { performReplacementsOnBlock } from './text-replacer';
+import { processMarkedContent } from './marked-content-handler';
 import type {
   FontInfo,
   ParsedContentStream,
@@ -47,6 +48,10 @@ interface ContentStreamEntry {
   parsed: ParsedContentStream;
   modified?: boolean;
   patchedBytes?: Uint8Array;
+  // Track if this came from concatenating array streams
+  isArrayConcatenation?: boolean;
+  // Reference to original PDFArray for replacement
+  originalArray?: PDFArray;
 }
 
 /**
@@ -324,6 +329,15 @@ async function processPage(
       const result = performReplacementsOnBlock(block, blockReplacements, fontRegistry);
       totalPageMatches += result.matchCount;
 
+      // Process marked content after text replacement
+      const mcStats = processMarkedContent(block);
+      if (mcStats.totalPairs > 0) {
+        console.log(
+          `[Page ${pageIndex + 1} Stream ${streamIndex + 1}] Marked Content: ` +
+            `${mcStats.emptyRemoved} empty removed, ${mcStats.actualTextUpdated} ActualText updated`
+        );
+      }
+
       if (result.characterIssues.size > 0) {
         for (const [char, strings] of result.characterIssues) {
           if (!pageCharacterIssues.has(char)) {
@@ -435,7 +449,7 @@ async function processPage(
   const anyModified = streamEntries.some((e) => e.modified);
   if (anyModified) {
     try {
-      await updatePageContentStream(contentStream, streamEntries);
+      await updatePageContentStream(page, contentStream, streamEntries);
     } catch (error) {
       console.error('[PDF Processor] Failed to update content stream(s):', error);
       return {
@@ -467,6 +481,34 @@ async function processPage(
 }
 
 /**
+ * Concatenate multiple stream byte arrays into one continuous buffer.
+ * Adds whitespace between streams to prevent token merging.
+ */
+function concatenateStreamBytes(streamBytes: Uint8Array[]): Uint8Array {
+  if (streamBytes.length === 1) return streamBytes[0];
+
+  // Calculate total size (streams + separating spaces)
+  const totalSize =
+    streamBytes.reduce((sum, bytes) => sum + bytes.length, 0) + (streamBytes.length - 1);
+
+  const result = new Uint8Array(totalSize);
+  let offset = 0;
+
+  for (let i = 0; i < streamBytes.length; i++) {
+    result.set(streamBytes[i], offset);
+    offset += streamBytes[i].length;
+
+    // Add space between streams (not after last)
+    if (i < streamBytes.length - 1) {
+      result[offset] = 0x20; // ASCII space
+      offset++;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Resolve page Contents into an array of stream entries (one per stream).
  * Single stream -> one entry with ref=null. PDFArray -> one entry per ref, ref preserved.
  */
@@ -486,26 +528,46 @@ async function getContentStreams(
     if (contentStream instanceof PDFArray) {
       const context = page.doc.context;
       const streamRefs = contentStream.asArray();
-      const entries: ContentStreamEntry[] = [];
+
+      // Decode all streams first
+      const decodedStreams: Array<{ stream: PDFStream; bytes: Uint8Array }> = [];
 
       for (const refOrStream of streamRefs) {
-        const ref = refOrStream instanceof PDFRef ? refOrStream : null;
         const stream: PDFStream | undefined =
           refOrStream instanceof PDFRef
             ? context.lookupMaybe(refOrStream, PDFStream)
             : refOrStream instanceof PDFStream
               ? refOrStream
               : undefined;
+
         if (stream) {
           const bytes = await decodeStream(stream);
           if (bytes) {
-            const parsed = parseContentStreamWithPositions(bytes, pageIndex);
-            entries.push({ stream, bytes, ref, parsed });
+            decodedStreams.push({ stream, bytes });
           }
         }
       }
 
-      return entries.length > 0 ? entries : null;
+      if (decodedStreams.length === 0) return null;
+
+      // Concatenate all stream bytes into one
+      const allBytes = decodedStreams.map((s) => s.bytes);
+      const concatenatedBytes = concatenateStreamBytes(allBytes);
+
+      // Parse the concatenated stream ONCE
+      const parsed = parseContentStreamWithPositions(concatenatedBytes, pageIndex);
+
+      // Return a single entry representing the concatenation
+      return [
+        {
+          stream: decodedStreams[0].stream, // Use first stream as container
+          bytes: concatenatedBytes,
+          ref: null,
+          parsed,
+          isArrayConcatenation: true,
+          originalArray: contentStream // Preserve reference to replace it
+        }
+      ];
     }
 
     throw new Error('Unsupported content stream type');
@@ -742,6 +804,15 @@ async function processXObject(
       replacementCount += result.count;
     }
 
+    // Process marked content in XObjects
+    const mcStats = processMarkedContent(block);
+    if (mcStats.totalPairs > 0) {
+      console.log(
+        `[XObject "${xobjectRef.name}"] Marked Content: ` +
+          `${mcStats.emptyRemoved} empty removed, ${mcStats.actualTextUpdated} ActualText updated`
+      );
+    }
+
     // Merge character issues
     for (const [char, strings] of result.characterIssues) {
       if (!characterIssues.has(char)) {
@@ -830,13 +901,87 @@ function updateStreamInPlace(entry: ContentStreamEntry): void {
 }
 
 /**
+ * Replace a PDFArray (Contents array) with a single PDFStream.
+ * Updates the page dictionary to point to the single stream.
+ */
+async function replaceArrayWithSingleStream(
+  page: PDFPage,
+  entry: ContentStreamEntry
+): Promise<void> {
+  // Encode the patched bytes (with FlateDecode compression)
+  const filterVal = entry.stream.dict.get(PDFName.of('Filter'));
+  const decodeParmsVal = entry.stream.dict.get(PDFName.of('DecodeParms'));
+
+  const encodedBytes = encodeStreamWithFilter(entry.patchedBytes!, filterVal, decodeParmsVal);
+  const bytesToWrite = encodedBytes ?? entry.patchedBytes!;
+
+  // Update the first stream with new content
+  const rawStream = entry.stream as PDFRawStream;
+  (rawStream as any).contents = bytesToWrite;
+  rawStream.dict.set(PDFName.of('Length'), PDFNumber.of(bytesToWrite.length));
+
+  if (encodedBytes !== null) {
+    rawStream.dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+  } else {
+    rawStream.dict.delete(PDFName.of('Filter'));
+    rawStream.dict.delete(PDFName.of('DecodeParms'));
+  }
+
+  // Replace array with single stream in page dictionary
+  const pageDict = page.node;
+  const context = page.doc.context;
+
+  // Get reference to the updated stream, or create one
+  const streamRef = context.getObjectRef(entry.stream);
+  if (streamRef) {
+    pageDict.set(PDFName.of('Contents'), streamRef);
+  } else {
+    // Direct stream (unlikely but handle it)
+    pageDict.set(PDFName.of('Contents'), entry.stream);
+  }
+
+  // Clean up orphaned streams from the original array
+  // These are no longer referenced and should be removed from the PDF
+  if (entry.originalArray) {
+    const originalRefs = entry.originalArray.asArray();
+    const keptStreamRef = streamRef;
+
+    for (const refOrStream of originalRefs) {
+      if (refOrStream instanceof PDFRef) {
+        // Skip the stream we're keeping
+        if (keptStreamRef && refOrStream.tag === keptStreamRef.tag) {
+          continue;
+        }
+
+        // Delete the orphaned stream object from the PDF context
+        // This reduces final PDF file size by removing unused objects
+        try {
+          // pdf-lib doesn't have a public delete API, but we can mark objects
+          // as deleted by removing them from the context's object map
+          const contextInternal = context as any;
+          if (contextInternal.indirectObjects) {
+            contextInternal.indirectObjects.delete(refOrStream);
+          }
+        } catch (error) {
+          // If deletion fails, pdf-lib's save process will still perform
+          // garbage collection and exclude unreachable objects
+          console.warn('[PDF Processor] Could not explicitly delete orphaned stream:', error);
+        }
+      }
+    }
+  }
+}
+
+/**
  * Update page Contents from per-stream entries.
  * Modifies streams in place, preserving original object references.
  */
 async function updatePageContentStream(
+  page: PDFPage,
   originalStream: PDFStream | PDFArray,
   streamEntries: ContentStreamEntry[]
 ): Promise<void> {
+  // Single stream case - unchanged
   if (originalStream instanceof PDFStream) {
     const entry = streamEntries[0];
     if (!entry.modified || !entry.patchedBytes) return;
@@ -845,11 +990,22 @@ async function updatePageContentStream(
     return;
   }
 
+  // Array case
   if (originalStream instanceof PDFArray) {
-    for (let i = 0; i < streamEntries.length; i++) {
-      const entry = streamEntries[i];
+    const entry = streamEntries[0];
+
+    // Check if this is a concatenated array
+    if (entry.isArrayConcatenation) {
       if (entry.modified && entry.patchedBytes) {
-        updateStreamInPlace(entry);
+        await replaceArrayWithSingleStream(page, entry);
+      }
+    } else {
+      // Backward compatibility: multiple independent entries (shouldn't happen anymore)
+      for (let i = 0; i < streamEntries.length; i++) {
+        const e = streamEntries[i];
+        if (e.modified && e.patchedBytes) {
+          updateStreamInPlace(e);
+        }
       }
     }
   }

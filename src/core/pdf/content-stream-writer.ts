@@ -117,7 +117,11 @@ function serializeOperation(operation: PDFOperation): Uint8Array {
     opBytes[i] = operation.operator.charCodeAt(i);
   }
   parts.push(opBytes);
-  parts.push(new Uint8Array([CHAR_BYTES.CARRIAGE_RETURN, CHAR_BYTES.LINE_FEED]));
+  if (operation.operator === 'W') {
+    parts.push(new Uint8Array([CHAR_BYTES.SPACE]));
+  } else {
+    parts.push(new Uint8Array([CHAR_BYTES.CARRIAGE_RETURN, CHAR_BYTES.LINE_FEED]));
+  }
 
   const totalLength = parts.reduce((sum, arr) => sum + arr.length, 0);
   const result = new Uint8Array(totalLength);
@@ -288,12 +292,15 @@ function bytesToPDFStringLiteral(bytes: Uint8Array): Uint8Array {
 function startsWithDelimiter(bytes: Uint8Array): boolean {
   if (bytes.length === 0) return false;
   const first = bytes[0];
-  // Check for <, [, (, and << (need to check two bytes for <<)
-  if (
-    first === CHAR_BYTES.LESS_THAN ||
-    first === CHAR_BYTES.OPEN_BRACKET ||
-    first === CHAR_BYTES.OPEN_PAREN
-  ) {
+
+  if (bytes.length > 1) {
+    const second = bytes[1];
+    if (first === CHAR_BYTES.LESS_THAN && second === CHAR_BYTES.LESS_THAN) {
+      return false;
+    }
+  }
+
+  if (first === CHAR_BYTES.LESS_THAN || first === CHAR_BYTES.OPEN_BRACKET) {
     return true;
   }
   return false;
@@ -305,6 +312,14 @@ function startsWithDelimiter(bytes: Uint8Array): boolean {
 function endsWithDelimiter(bytes: Uint8Array): boolean {
   if (bytes.length === 0) return false;
   const last = bytes[bytes.length - 1];
+
+  if (bytes.length > 1) {
+    const secondLast = bytes[bytes.length - 2];
+    if (secondLast === CHAR_BYTES.GREATER_THAN && last === CHAR_BYTES.GREATER_THAN) {
+      return false;
+    }
+  }
+
   // Check for >, ], ), and >> (need to check two bytes for >>)
   if (
     last === CHAR_BYTES.GREATER_THAN ||

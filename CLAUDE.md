@@ -60,7 +60,7 @@ The application follows Electron's security model with three isolated processes:
 
 The PDF text replacement happens in `src/core/pdf/` with a multi-stage surgical approach:
 
-1. **Load PDF** (`loader.ts`): Read PDF using pdf-lib, preserve all structure
+1. **Load PDF** (`pdf-handler.ts`): Read PDF using pdf-lib, preserve all structure
 2. **Parse Content Streams** (`content-stream-parser.ts`): Extract PDF operations with byte-level positions
    - Preserves ALL operations (graphics, paths, images, text)
    - Identifies text blocks (`BT...ET`) separately
