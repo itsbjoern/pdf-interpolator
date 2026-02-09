@@ -1,25 +1,34 @@
-![PDF Interpolator Logo](./build/icons/64x64.png)
-
 # PDF Interpolator
 
-A desktop application for replacing text in PDF files using data from spreadsheets.
+A desktop application for replacing text in PDF files using data from spreadsheets designed to be used with static templated PDFs, such as pricing lists or invoices.
 
 ![GitHub Release](https://img.shields.io/github/v/release/itsbjoern/pdf-interpolator)
 
+PDF Interpolator reads a spreadsheet (Excel or CSV) and replaces matching text in a PDF document. You define which columns to use: one column contains the text to find, another contains the replacement text. Any matching text will be automatically replaced and all other content will be preserved.
 
-## Overview
+## Features
 
-PDF Interpolator reads a spreadsheet (Excel or CSV) and replaces matching text in a PDF document. You define which columns to use: one column contains the text to find, another contains the replacement text.
+- Fully offline application to ensure your sensitive data stays private, no data is ever stored or transferred.
+- Ensures compatibility with notoriously finnicky PDF readers such as Adobe Acrobat Reader.
+- Aims to maintain the original PDF accessibility features, such as bookmarks, annotations and any additional marked content.
+- Preserves the original PDF formatting, fonts, and layout while performing the replacements.
+- Inbuilt internationalisation when replacing numbers from spreadsheets. Easily exstensible to correctly recognise decimal and thousands separators. Currently supports English and German. 
 
-The application preserves the original PDF formatting, fonts, and layout while performing the replacements.
+## Known Limitations
+If a replacement cannot be made it will be skipped, the original text will be preserved and a warning will be shown. In those cases ensure the following:
 
+- For embedded fonts all characters in replacement text must be available in the PDF's fonts. To ensure proper replacement each page should already contain all characters in the replacement text. These characters can be invisible, but they must be present.
+- Text spanning multiple lines or text segments may not be replaced correctly.
+
+
+## Screenshots
 |||
 |-|-|
 |![PDF Interpolator Screenshot](./readme/preview.png)|![PDF Interpolator Screenshot](./readme/success.png)|
 
-## Download
+## [Download](https://github.com/itsbjoern/pdf-interpolator/releases/latest)
 
-Download the latest version for your operating system from the [releases page](https://github.com/itsbjoern/pdf-interpolator/releases).
+Download the latest version for your operating system from the [releases page](https://github.com/itsbjoern/pdf-interpolator/releases/latest).
 
 **Available for:**
 - Windows (.exe installer)
@@ -55,17 +64,6 @@ Click "Process PDF" to start. The application will show a detailed results windo
 - Successful replacements
 - Any encoding issues (if characters in your replacement text are not available in the PDF's fonts)
 
-## Requirements
-
-- The spreadsheet must contain at least two columns per sheet (one for finding text, one for replacing)
-- Text matches are case-sensitive
-- Empty cells are skipped
-
-## Known Limitations
-
-- Special characters in replacement text must be available in the PDF's fonts
-- Very large PDFs may take longer to process
-- Text spanning multiple lines or text segments may not be replaced
 
 ## Building from Source
 
