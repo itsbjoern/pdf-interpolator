@@ -50,12 +50,7 @@ export async function loadPDF(filePath: string): Promise<PDFDocument> {
       console.warn('[PDF Handler] Failed to find best trailer:', error);
     }
 
-    // One write/load cycle to ensure the PDF is fully loaded
-    const fixedBytes = await pdfDoc.save({ useObjectStreams: false });
-    await writeFile('/Users/bjoern/Downloads/clean_8.pdf', fixedBytes);
-    const fixedPdfDoc = await PDFDocument.load(fixedBytes);
-
-    return fixedPdfDoc;
+    return pdfDoc;
   } catch (error) {
     if (error instanceof Error) {
       throw new PDFLoadError(error.message, filePath);
