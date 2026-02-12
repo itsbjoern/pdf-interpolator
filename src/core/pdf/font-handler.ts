@@ -214,6 +214,40 @@ function glyphNameToUnicode(glyphName: string): string | null {
 }
 
 /**
+ * Check if a character is invalid/unusable for text encoding
+ * Filters out replacement characters, null bytes, control characters, and lone surrogates
+ */
+function isInvalidCharacter(char: string): boolean {
+  if (!char || char === '') return true;
+
+  const codePoint = char.charCodeAt(0);
+
+  // Replacement character (indicates parsing failure)
+  if (codePoint === 0xFFFD) return true;
+
+  // Null character
+  if (codePoint === 0x00) return true;
+
+  // Control characters (except tab, newline, carriage return)
+  if ((codePoint < 0x20 && codePoint !== 0x09 && codePoint !== 0x0A && codePoint !== 0x0D) ||
+      (codePoint >= 0x7F && codePoint <= 0x9F)) {
+    return true;
+  }
+
+  // Lone surrogates (invalid by themselves)
+  if (codePoint >= 0xD800 && codePoint <= 0xDFFF) return true;
+
+  // Non-characters permanently reserved by Unicode
+  if ((codePoint >= 0xFDD0 && codePoint <= 0xFDEF) ||
+      (codePoint & 0xFFFF) === 0xFFFE ||
+      (codePoint & 0xFFFF) === 0xFFFF) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Parse ToUnicode CMap stream
  */
 async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, string>> {
@@ -239,11 +273,7 @@ async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, st
             const dstHex = charMatch[2];
 
             const char = hexToUnicode(dstHex);
-            if (char) {
-              const isInvalid = char === '\uFFFD' || char === '\x00' || char === '';
-              if (isInvalid) {
-                continue;
-              }
+            if (char && !isInvalidCharacter(char)) {
               map.set(srcCode, char);
             }
           }
