@@ -81,11 +81,10 @@ export async function parseFontInfo(
     const baseFontObj = fontDict.lookup(PDFName.of('BaseFont'));
     const baseFont = baseFontObj?.toString().replace(/^\//, '') || 'Unknown';
 
-    // Use WinAnsiEncoding as default
-    let encoding: FontEncoding = 'WinAnsiEncoding';
-    let encodingMap = new Map(WIN_ANSI_ENCODING);
-
     const encodingObj = fontDict.lookup(PDFName.of('Encoding'));
+    let encoding: FontEncoding = 'WinAnsiEncoding';
+    let encodingMap: Map<number, string>;
+
     if (encodingObj) {
       const encodingStr = encodingObj.toString();
 
@@ -123,13 +122,32 @@ export async function parseFontInfo(
         encodingMap = new Map(STANDARD_ENCODING);
       } else if (encodingStr.includes('Identity-H') || encodingStr.includes('Identity-V')) {
         encoding = 'Identity-H';
+        // For Identity-H, we need ToUnicode CMap
+        const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
+        if (toUnicode && toUnicode instanceof PDFStream) {
+          encodingMap = await parseToUnicodeCMap(toUnicode);
+        } else {
+          // Fallback: identity mapping (UTF-16 BE)
+          encodingMap = new Map();
+          for (let i = 0; i < 65536; i++) {
+            encodingMap.set(i, String.fromCharCode(i));
+          }
+        }
+      } else {
+        // Unknown encoding, use WinAnsi as fallback
+        encoding = 'Custom';
+        encodingMap = new Map(WIN_ANSI_ENCODING);
       }
-    }
-
-    // If there is a ToUnicode CMap, use it to build the encoding map
-    const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
-    if (toUnicode && toUnicode instanceof PDFStream) {
-      encodingMap = await parseToUnicodeCMap(toUnicode);
+    } else {
+      // No encoding specified, check for ToUnicode CMap first
+      const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
+      if (toUnicode && toUnicode instanceof PDFStream) {
+        encoding = 'Custom';
+        encodingMap = await parseToUnicodeCMap(toUnicode);
+      } else {
+        // Use WinAnsi as default
+        encodingMap = new Map(WIN_ANSI_ENCODING);
+      }
     }
 
     // Build reverse map for encoding
