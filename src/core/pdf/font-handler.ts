@@ -82,12 +82,15 @@ export async function parseFontInfo(
     const baseFont = baseFontObj?.toString().replace(/^\//, '') || 'Unknown';
 
     const encodingObj = fontDict.lookup(PDFName.of('Encoding'));
+    const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
+
     let encoding: FontEncoding = 'WinAnsiEncoding';
-    let encodingMap: Map<number, string>;
+    let encodingMap = new Map(WIN_ANSI_ENCODING);
 
     if (encodingObj) {
       const encodingStr = encodingObj.toString();
 
+      // Handle Encoding as a dictionary (with potential Differences array)
       if (encodingObj instanceof PDFLibDict) {
         const baseEncodingObj = encodingObj.lookup(PDFName.of('BaseEncoding'));
         const baseEncodingStr = baseEncodingObj?.toString() || '/WinAnsiEncoding';
@@ -107,9 +110,7 @@ export async function parseFontInfo(
 
         const differencesObj = encodingObj.lookup(PDFName.of('Differences'));
         if (differencesObj) {
-          console.log(`[Font Handler] Font ${fontName} has Differences array`);
           applyDifferences(encodingMap, differencesObj);
-          encoding = 'Custom';
         }
       } else if (encodingStr.includes('WinAnsiEncoding')) {
         encoding = 'WinAnsiEncoding';
@@ -122,35 +123,19 @@ export async function parseFontInfo(
         encodingMap = new Map(STANDARD_ENCODING);
       } else if (encodingStr.includes('Identity-H') || encodingStr.includes('Identity-V')) {
         encoding = 'Identity-H';
-        // For Identity-H, we need ToUnicode CMap
-        const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
-        if (toUnicode && toUnicode instanceof PDFStream) {
-          encodingMap = await parseToUnicodeCMap(toUnicode);
-        } else {
-          // Fallback: identity mapping (UTF-16 BE)
-          encodingMap = new Map();
-          for (let i = 0; i < 65536; i++) {
-            encodingMap.set(i, String.fromCharCode(i));
-          }
+        encodingMap = new Map();
+        // Identity-H fallback
+        for (let i = 0; i < 65536; i++) {
+          encodingMap.set(i, String.fromCharCode(i));
         }
-      } else {
-        // Unknown encoding, use WinAnsi as fallback
-        encoding = 'Custom';
-        encodingMap = new Map(WIN_ANSI_ENCODING);
-      }
-    } else {
-      // No encoding specified, check for ToUnicode CMap first
-      const toUnicode = fontDict.lookup(PDFName.of('ToUnicode'));
-      if (toUnicode && toUnicode instanceof PDFStream) {
-        encoding = 'Custom';
-        encodingMap = await parseToUnicodeCMap(toUnicode);
-      } else {
-        // Use WinAnsi as default
-        encodingMap = new Map(WIN_ANSI_ENCODING);
       }
     }
 
-    // Build reverse map for encoding
+    if (toUnicode && toUnicode instanceof PDFStream) {
+      const unicodeMap = await parseToUnicodeCMap(toUnicode);
+      encodingMap = unicodeMap;
+    }
+
     const reverseMap = new Map<string, number>();
     for (const [code, char] of encodingMap) {
       if (!reverseMap.has(char)) {
@@ -251,8 +236,16 @@ async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, st
           const charMatch = line.match(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/);
           if (charMatch) {
             const srcCode = parseInt(charMatch[1], 16);
-            const dstCode = parseInt(charMatch[2], 16);
-            map.set(srcCode, String.fromCharCode(dstCode));
+            const dstHex = charMatch[2];
+
+            const char = hexToUnicode(dstHex);
+            if (char) {
+              const isInvalid = char === '\uFFFD' || char === '\x00' || char === '';
+              if (isInvalid) {
+                continue;
+              }
+              map.set(srcCode, char);
+            }
           }
         }
       }
@@ -268,11 +261,17 @@ async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, st
           if (rangeMatch) {
             const startCode = parseInt(rangeMatch[1], 16);
             const endCode = parseInt(rangeMatch[2], 16);
-            let dstCode = parseInt(rangeMatch[3], 16);
+            const dstHex = rangeMatch[3];
 
+            // For ranges, increment the Unicode value for each code
+            const baseCodePoint = parseInt(dstHex, 16);
             for (let code = startCode; code <= endCode; code++) {
-              map.set(code, String.fromCharCode(dstCode));
-              dstCode++;
+              const offset = code - startCode;
+              const codePoint = baseCodePoint + offset;
+              const char = String.fromCodePoint(codePoint);
+              if (char && char !== '\x00') {
+                map.set(code, char);
+              }
             }
           }
         }
@@ -283,6 +282,44 @@ async function parseToUnicodeCMap(cmapStream: PDFStream): Promise<Map<number, st
   }
 
   return map;
+}
+
+/**
+ * Convert hex string to Unicode character(s)
+ * Handles both single-byte (e.g., "0041" = 'A') and multi-byte UTF-16 sequences
+ */
+function hexToUnicode(hexStr: string): string | null {
+  try {
+    if (hexStr.length > 4) {
+      const bytes: number[] = [];
+      for (let i = 0; i < hexStr.length; i += 2) {
+        bytes.push(parseInt(hexStr.substr(i, 2), 16));
+      }
+
+      const utf16Codes: number[] = [];
+      for (let i = 0; i < bytes.length; i += 2) {
+        if (i + 1 < bytes.length) {
+          utf16Codes.push((bytes[i] << 8) | bytes[i + 1]);
+        }
+      }
+
+      const result = String.fromCharCode(...utf16Codes);
+
+      if (result && result !== '\x00' && !result.includes('\uFFFD')) {
+        return result;
+      }
+      return null;
+    } else {
+      const codePoint = parseInt(hexStr, 16);
+      if (codePoint === 0) {
+        return null;
+      }
+      return String.fromCodePoint(codePoint);
+    }
+  } catch (error) {
+    console.warn(`[Font Handler] Failed to parse hex string: ${hexStr}`, error);
+    return null;
+  }
 }
 
 /**
